@@ -47,3 +47,4 @@ Ember releases time series data of power generation, broken down by fuel type, a
 Compiling a full dataset from 2000 to 2022 requires using data at multiple timescales. Annual generation data is collected from both national and multi-country sources. For the most recent years, data is often not available. In these cases we use monthly data, which is reported on a shorter lag, to estimate the latest annual generation.
 
 Power data is gathered in a wide variety of formats from multiple sources. In addition to this reconciliation, our data requires considerable cleaning and adjustment of the raw data reported. An overview of our methods is below.
+https://github.com/SkurativskaKateryna/BEFD_2023/tree/1884b6883d7207faf5d183f3c74174b4cf92d10b/docs
