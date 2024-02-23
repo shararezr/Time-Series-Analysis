@@ -1,0 +1,2901 @@
+---
+title: "index_part2"
+author: "Skurativska"
+date: "2024-01-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## DEMAND
+
+1)  Take demand annual analysis
+
+2)  Apply all possible models
+
+3)  Take all variables and apply all possible models
+
+```{r}
+library(dplyr)
+
+data <- read.csv("Data BEFD/yearly_full_release_long_format.csv")
+
+data_eu <- subset(data, EU==1)
+contries <- unique(data_eu$Area)
+print(unique(data_eu$Area))
+```
+
+```{r}
+set.seed(1)
+demand_data <- subset(data_eu, Variable == "Demand")
+demand_data <- demand_data[,c("Area", "Country.code", "Year" ,"Value")]
+library(dplyr)
+
+# Group by 'Area' (countries) and calculate the mean for each country
+mean_demand_by_country <- demand_data%>%
+  group_by(Area) %>%
+  summarise(Mean_Demand = mean(Value, na.rm=TRUE))
+
+num_clusters <- 4
+kmeans_result <- kmeans(mean_demand_by_country$Mean_Demand, centers = num_clusters)
+
+mean_demand_by_country$Cluster <- kmeans_result$cluster
+
+# Print the resulting data frame
+#print(mean_demand_by_country)
+print(unique(mean_demand_by_country[,c("Area", "Cluster")]))
+mean_demand_by_country <- mean_demand_by_country[,c("Area", "Cluster")]
+#cluster_data <- merge(data_eu, mean_demand_by_country, by = "Area", all.x = TRUE)
+
+demand_data$Cluster <- 0
+
+for ( i in 1:nrow(demand_data)) {
+  country <- demand_data[i, 1]
+  demand_data[i, "Cluster"] <- subset(mean_demand_by_country, Area==country)$Cluster
+}
+
+
+```
+
+After this demand_data is clustered by column Cluster
+
+```{r}
+library(plotly)
+library(viridis) 
+
+plot_ly(demand_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Demand"),
+         showlegend = TRUE)
+
+ggplot(demand_data, aes(x = Year, y = Value, color = Cluster)) +
+  geom_point() +
+  labs(title = "Countries Clustered Based on Value",
+       x = "Year",
+       y = "Value",
+       color = "Cluster") +
+  scale_color_viridis(option = "D")+
+  theme_light()
+```
+
+```{r}
+# Group by Cluster and Year, then calculate the mean
+mean_demand_data <- demand_data %>%
+  group_by(Cluster, Year) %>%
+  summarise(Value = mean(Value))
+
+# Print the resulting data frame
+print(mean_demand_data)
+
+library(plotly)
+library(fpp2)
+
+plot_ly(mean_demand_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Value"),
+         showlegend = TRUE)
+
+
+```
+
+let's apply hts()
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+demand_data <- demand_data %>%
+  mutate(ClustCode = paste(Cluster, Country.code, sep=""))
+
+
+
+# Assuming your data frame is called "your_data"
+# Replace "your_data" with the actual name of your data frame
+
+# Grouping by Cluster and extracting unique countries for each cluster
+country_lists <- demand_data %>%
+  group_by(Cluster) %>%
+  summarize(Countries = toString(unique(ClustCode)))
+
+# Printing the result
+print(country_lists)
+
+demand_hts <- demand_data[,c("Year", "Value", "ClustCode")]
+
+
+
+new_demand_hts <- data.frame(matrix(NA, nrow = 23, ncol = 27))
+colnames(new_demand_hts) <- unique(demand_hts$ClustCode)
+rownames(new_demand_hts) <- unique(demand_hts$Year)
+
+for (code in unique(demand_data$ClustCode)){
+  for (year in 2000:2022){
+    new_demand_hts[as.character(year), code] <- demand_hts[demand_hts$ClustCode == code & demand_hts$Year == year, ]$Value
+  }
+}
+
+demand_hts <- ts(new_demand_hts, start=2000)
+  
+
+demand_hts_result <- hts(demand_hts, characters = c(1, 3))
+
+#plot(demand_hts_result, include = 16, levels = 1)
+
+demand_hts_result %>% aggts(levels=0:1) %>%
+  autoplot() +
+  theme_light()+
+  xlab("Year") + ylab("Demannd") + ggtitle("Cluster")
+
+
+```
+
+```{r}
+
+demand_gts_result <- gts(demand_hts, characters = c(1,3))
+
+demand_gts_result %>% aggts(level=1) %>% autoplot()
+
+```
+
+###  Forecasts
+
+```{r}
+library(hts)
+library(fpp2)
+#aggts1 <- aggts(demand_hts_result)
+#aggts2 <- aggts(demand_hts_result, levels = 1)
+#aggts3 <- aggts(demand_hts_result, levels = c(0, 2))
+
+# demand.bu<-  forecast(
+#   demand_hts_result, h = 4, method = "bu", fmethod = "ets", parallel = TRUE
+# )
+# #aggts4 <- aggts(demand.bu)
+# print("---------BU---------")
+# 
+# summary(demand.bu)
+# plot(demand.bu, levels = 1)
+
+#Error-Trend-Seasonal method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.ets.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "ets")
+demand.ets.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "ets", level=1)
+demand.ets.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "ets")
+demand.ets.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "ets")
+demand.ets.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "ets")
+
+print("------ETS---------")
+accuracy(demand.ets.bu, demand.test, levels = 1)
+accuracy(demand.ets.mo, demand.test, levels = 1)
+accuracy(demand.ets.tdgsa, demand.test, levels = 1)
+accuracy(demand.ets.tdfp, demand.test, levels = 1)
+accuracy(demand.ets.comb, demand.test, levels = 1)
+plot(demand.ets.mo, levels = 1) 
+
+
+#Random walk method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.rw.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "rw")
+demand.rw.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "rw", level=1)
+demand.rw.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "rw")
+demand.rw.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "rw")
+demand.rw.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "rw")
+
+print("------RW---------")
+accuracy(demand.rw.bu, demand.test, levels = 1)
+accuracy(demand.rw.mo, demand.test, levels = 1)
+accuracy(demand.rw.tdgsa, demand.test, levels = 1)
+accuracy(demand.rw.tdfp, demand.test, levels = 1)
+accuracy(demand.rw.comb, demand.test, levels = 1)
+plot(demand.rw.bu, levels = 1) 
+
+#ARIMA method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.arima.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "arima")
+demand.arima.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "arima", level=1)
+demand.arima.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "arima")
+demand.arima.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "arima")
+demand.arima.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "arima")
+
+print("------ARIMA---------")
+accuracy(demand.arima.bu, demand.test, levels = 1)
+accuracy(demand.arima.mo, demand.test, levels = 1)
+accuracy(demand.arima.tdgsa, demand.test, levels = 1)
+accuracy(demand.arima.tdfp, demand.test, levels = 1)
+accuracy(demand.arima.comb, demand.test, levels = 1)
+plot(demand.arima.bu, levels = 1) 
+
+```
+
+#### Future
+
+smth
+
+```{r}
+model <- demand.arima.mo
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+levels_1 <-  aggts(model, levels=1, forecasts = FALSE)
+levels_1
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,1], series="Training") +
+  autolayer(levels_1_forecasts[,1], series="Test")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,2], series="Training") +
+  autolayer(levels_1_forecasts[,2], series="Test")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,3], series="Training") +
+  autolayer(levels_1_forecasts[,3], series="Test")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,4], series="Training") +
+  autolayer(levels_1_forecasts[,4], series="Test")+theme_light()
+```
+
+```{r}
+model <- forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1)
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,1], series="Forecast")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,2], series="Forecast")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,3], series="Forecast")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,4], series="Forecast")+theme_light()
+```
+
+else
+
+```{r}
+
+```
+
+```{r}
+plot(forecast(demand_hts_result, h = 6, method = "mo", fmethod = "ets", level=1), levels = 1)
+plot(forecast(demand_hts_result, h = 6, method = "mo", fmethod = "ets", level=1), levels = 2)
+
+```
+
+```{r}
+library(tidyr)
+
+transformed_df <- demand_data %>%
+  group_by(Cluster, Year) %>%
+  summarise(Sum_Value = sum(Value)) %>%
+  spread(Cluster, Sum_Value, fill = 0)
+transformed_df <- ts(transformed_df[2:5], start=2000)
+
+```
+
+```{r}
+transformed_forecast <- aggts(demand.ets.mo, levels = 1)
+  
+autoplot(transformed_df[,1]) +
+  autolayer(transformed_forecast[,1], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 1 mathod: bu + ETS")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.arima.tdfp, levels = 1)
+  
+autoplot(transformed_df[,2]) +
+  autolayer(transformed_forecast[,2], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 2 mathod: tdfp + ARIMA")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.rw.tdfp, levels = 1)
+  
+autoplot(transformed_df[,3]) +
+  autolayer(transformed_forecast[,3], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 3 mathod: tdfp + RW")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.arima.mo, levels = 1)
+  
+autoplot(transformed_df[,4]) +
+  autolayer(transformed_forecast[,4], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 4 mathod: mo + ARIMA")+
+  theme_light()
+```
+
+```{r}
+
+plot(demand.ets.bu, levels = 1) 
+plot(demand.ets.mo, levels = 1)
+plot(demand.arima.mo, levels = 1)
+```
+
+### Autocorrelation
+
+```{r}
+representative_data <- demand_data %>%
+  group_by(Cluster, Year) %>%
+  mutate(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+
+Cluster1Dataset <- representative_data %>%
+  filter(Cluster == 1)
+
+Cluster1Dataset <- unique(Cluster1Dataset[,c("Year", "mean_value")])
+
+Cluster2Dataset <- representative_data %>%
+  filter(Cluster == 2)
+Cluster2Dataset <- unique(Cluster2Dataset[,c("Year", "mean_value")])
+
+Cluster3Dataset <- representative_data %>%
+  filter(Cluster == 3)
+Cluster3Dataset <- unique(Cluster3Dataset[,c("Year", "mean_value")])
+
+Cluster4Dataset <- representative_data %>%
+  filter(Cluster == 4)
+Cluster4Dataset <- unique(Cluster4Dataset[,c("Year", "mean_value")])
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value , start = min(Cluster1Dataset$Year), frequency = 1)
+ts_data2 <- ts(Cluster2Dataset$mean_value , start = min(Cluster2Dataset$Year), frequency = 1)
+ts_data3 <- ts(Cluster3Dataset$mean_value , start = min(Cluster3Dataset$Year), frequency = 1)
+ts_data4 <- ts(Cluster4Dataset$mean_value , start = min(Cluster4Dataset$Year), frequency = 1)
+
+ts_data1_train <- ts(Cluster1Dataset$mean_value , start = min(Cluster1Dataset$Year),end = 2016, frequency = 1)
+ts_data2_train <- ts(Cluster2Dataset$mean_value , start = min(Cluster2Dataset$Year),end =2016, frequency = 1)
+ts_data3_train <- ts(Cluster3Dataset$mean_value , start = min(Cluster3Dataset$Year),end=2016, frequency = 1)
+ts_data4_train <- ts(Cluster4Dataset$mean_value , start = min(Cluster4Dataset$Year), end=2016, frequency = 1)
+
+ts_data1_test <- ts(Cluster1Dataset$mean_value , start = 2017, frequency = 1)
+ts_data2_test <- ts(Cluster2Dataset$mean_value , start = 2017, frequency = 1)
+ts_data3_test <- ts(Cluster3Dataset$mean_value , start = 2017, frequency = 1)
+ts_data4_test <- ts(Cluster4Dataset$mean_value , start = 2017, frequency = 1)
+
+
+```
+
+```{r}
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+```
+
+```{r}
+print("Diff")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+```
+
+```{r}
+#Auto arima
+print("Auto Arima")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+```
+
+```{r}
+#Holt's
+print("------------Cluster 1---------------")
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 2---------------")
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 3---------------")
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 4---------------")
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+```
+
+### monthly data
+
+```{r}
+data_month <- read.csv("Data BEFD/monthly_full_release_long_format-4.csv")
+
+data_eu_month <- subset(data_month, EU==1)
+contries <- unique(data_eu_month$Area)
+print(unique(data_eu$Area))
+```
+
+```{r}
+set.seed(1)
+demand_data_month <- subset(data_eu_month, Variable == "Demand")
+demand_data_month <- demand_data_month[,c("Area", "Country.code", "Date" ,"Value")]
+demand_data_month <- subset(demand_data_month, Date >= as.Date("2015-01-01"))
+
+# #Handling missing values for Italy
+# 
+# # Define the range of dates
+# start_date <- as.Date("2015-01-01")
+# end_date <- as.Date("2015-12-01")
+# mean_ITA <- mean(subset(demand_data_month, Area == "Italy")$Value)
+# 
+# # Create a sequence of dates within the specified range
+# date_sequence <- seq(start_date, end_date, by = "month")
+# 
+# # Create a template with the constant values
+# template <- data.frame(
+#   Area = rep("Italy", length(date_sequence)),
+#   Country.code = rep("ITA", length(date_sequence)),
+#   Date = as.character(date_sequence),
+#   Value = rep(mean_ITA, length(date_sequence)),
+#   Cluster = rep(3, length(date_sequence))
+# )
+# 
+# # Bind the template to the existing data frame
+# demand_data_month <- bind_rows(demand_data_month, template)
+# 
+# #Handling missing values for Slovenia
+# 
+# # Define the range of dates
+# start_date <- as.Date("2015-01-01")
+# end_date <- as.Date("2015-12-01")
+# mean_SVN <- mean(subset(demand_data_month, Area == "Slovenia")$Value)
+# 
+# # Create a sequence of dates within the specified range
+# date_sequence <- seq(start_date, end_date, by = "month")
+# 
+# # Create a template with the constant values
+# template <- data.frame(
+#   Area = rep("Slovenia", length(date_sequence)),
+#   Country.code = rep("SVN", length(date_sequence)),
+#   Date = as.character(date_sequence),
+#   Value = rep(mean_SVN, length(date_sequence)),
+#   Cluster = rep(1, length(date_sequence))
+# )
+# 
+# # Bind the template to the existing data frame
+# demand_data_month <- bind_rows(demand_data_month, template)
+# 
+# 
+# #Handling missing values for Cyprys
+# 
+# # Define the range of dates
+# start_date <- as.Date("2015-01-01")
+# end_date <- as.Date("2016-12-01")
+# mean_CYP <- mean(subset(demand_data_month, Area == "Cyprus")$Value)
+# 
+# # Create a sequence of dates within the specified range
+# date_sequence <- seq(start_date, end_date, by = "month")
+# 
+# # Create a template with the constant values
+# template <- data.frame(
+#   Area = rep("Cyprus", length(date_sequence)),
+#   Country.code = rep("CYP", length(date_sequence)),
+#   Date = as.character(date_sequence),
+#   Value = rep(mean_CYP, length(date_sequence)),
+#   Cluster = rep(1, length(date_sequence))
+# )
+# 
+# # Bind the template to the existing data frame
+# demand_data_month <- bind_rows(demand_data_month, template)
+# 
+# 
+
+```
+
+```{r}
+library(dplyr)
+
+# Group by 'Area' (countries) and calculate the mean for each country
+mean_demand_by_country_month <- demand_data_month%>%
+  group_by(Area) %>%
+  summarise(Mean_Demand = mean(Value, na.rm=TRUE))
+
+num_clusters <- 4
+kmeans_result_month <- kmeans(mean_demand_by_country_month$Mean_Demand, centers = num_clusters)
+
+mean_demand_by_country_month$Cluster <- kmeans_result$cluster
+
+# Print the resulting data frame
+#print(mean_demand_by_country)
+print(unique(mean_demand_by_country_month[,c("Area", "Cluster")]))
+mean_demand_by_country_month <- mean_demand_by_country_month[,c("Area", "Cluster")]
+
+
+demand_data_month$Cluster <- 0
+
+for ( i in 1:nrow(demand_data_month)) {
+  country <- demand_data_month[i, 1]
+  demand_data_month[i, "Cluster"] <- subset(mean_demand_by_country_month, Area==country)$Cluster
+}
+```
+
+```{r}
+library(plotly)
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+
+# Create an interactive line plot with plotly
+plot_ly(demand_data_month, x = ~Date, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Date"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+ggplot(demand_data_month, aes(x = Date, y = Value, color = Area, group = Area)) +
+  geom_line() +
+  labs(title = "Values Over Time for Different Countries",
+       x = "Year",
+       y = "Value",
+       color = "Country") +
+  theme_light()+
+  theme(panel.grid.major = element_blank())
+```
+
+```{r}
+library(plotly)
+library(ggplot2)
+
+plot_ly(demand_data_month, x = ~Date, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "date"),
+         yaxis = list(title = "Demand"),
+         showlegend = TRUE)
+
+ggplot(demand_data_month, aes(x = Date, y = Value, color = Cluster)) +
+  geom_point() +
+  labs(title = "Countries Clustered Based on Value",
+       x = "Year",
+       y = "Value",
+       color = "Cluster") +
+  scale_color_viridis(option = "D")+
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(hts)
+
+demand_data_month <- demand_data_month %>%
+  mutate(ClustCode = paste(Cluster, Country.code, sep=""))
+
+
+
+# Assuming your data frame is called "your_data"
+# Replace "your_data" with the actual name of your data frame
+
+# Grouping by Cluster and extracting unique countries for each cluster
+country_lists <- demand_data_month %>%
+  group_by(Cluster) %>%
+  summarize(Countries = toString(unique(ClustCode)))
+
+# Printing the result
+print(country_lists)
+
+demand_hts_month <- demand_data_month[,c("Date", "Value", "ClustCode")]
+
+
+
+new_demand_hts_month <- data.frame(matrix(NA, nrow = length(unique(demand_hts_month$Date)), ncol = 27))
+colnames(new_demand_hts_month) <- unique(demand_hts_month$ClustCode)
+rownames(new_demand_hts_month) <- unique(demand_hts_month$Date)
+
+for (code in unique(demand_hts_month$ClustCode)) {
+  for (dat in unique(demand_hts_month$Date)) {
+    if(length
+       (demand_hts_month[demand_hts_month$ClustCode == code & demand_hts_month$Date == dat, ]$Value) == 0) {new_demand_hts_month[dat, code] <- NA}
+    else{
+      new_demand_hts_month[dat, code] <- demand_hts_month[demand_hts_month$ClustCode == code & demand_hts_month$Date == dat, ]$Value
+    }
+  }
+}
+
+demand_hts_month <- new_demand_hts_month
+
+for(i in 1:ncol(demand_hts_month)){
+  demand_hts_month[is.na(demand_hts_month[,i]), i] <- mean(demand_hts_month[,i], na.rm = TRUE)
+}
+
+
+demand_hts_month <- ts(demand_hts_month, start=c(2015, 1), frequency = 12)
+demand_hts_result_month <- hts(demand_hts_month, characters = c(1, 3))
+
+#plot(demand_hts_result, include = 16, levels = 1)
+
+ demand_hts_result_month %>% aggts(levels=1) %>%
+   autoplot() +
+   theme_light()+
+   xlab("Year") + ylab("Demand") + ggtitle("MONTHLY DATA")
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+library(hts)
+library(fpp2)
+#aggts1 <- aggts(demand_hts_result)
+#aggts2 <- aggts(demand_hts_result, levels = 1)
+#aggts3 <- aggts(demand_hts_result, levels = c(0, 2))
+
+demand_hts_result <- demand_hts_result_month
+hh <- 18
+
+
+demand.train <- window(demand_hts_result, start = c(2015,1), end = c(2022, 4))
+demand.test <- window(demand_hts_result, start = c(2022, 5))
+
+demand.ets.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "ets")
+demand.ets.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "ets", level=1)
+demand.ets.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "ets")
+demand.ets.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "ets")
+demand.ets.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "ets")
+
+print("------ETS---------")
+accuracy(demand.ets.bu, demand.test, levels = 1)
+accuracy(demand.ets.mo, demand.test, levels = 1)
+accuracy(demand.ets.tdgsa, demand.test, levels = 1)
+accuracy(demand.ets.tdfp, demand.test, levels = 1)
+accuracy(demand.ets.comb, demand.test, levels = 1)
+ plot(demand.ets.bu, levels = 1) 
+```
+
+```{r}
+
+
+
+#Random walk method
+
+demand.rw.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "rw")
+demand.rw.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "rw", level=1)
+demand.rw.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "rw")
+demand.rw.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "rw")
+demand.rw.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "rw")
+
+print("------RW---------")
+accuracy(demand.rw.bu, demand.test, levels = 1)
+accuracy(demand.rw.mo, demand.test, levels = 1)
+accuracy(demand.rw.tdgsa, demand.test, levels = 1)
+accuracy(demand.rw.tdfp, demand.test, levels = 1)
+accuracy(demand.rw.comb, demand.test, levels = 1)
+plot(demand.rw.bu, levels = 1)
+
+#ARIMA method
+
+demand.arima.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "arima")
+demand.arima.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "arima", level=1)
+demand.arima.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "arima")
+demand.arima.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "arima")
+demand.arima.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "arima")
+
+print("------ARIMA---------")
+accuracy(demand.arima.bu, demand.test, levels = 1)
+accuracy(demand.arima.mo, demand.test, levels = 1)
+accuracy(demand.arima.tdgsa, demand.test, levels = 1)
+accuracy(demand.arima.tdfp, demand.test, levels = 1)
+accuracy(demand.arima.comb, demand.test, levels = 1)
+plot(demand.arima.bu, levels = 1)
+
+```
+
+smth
+
+```{r}
+model <- demand.arima.mo
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+levels_1 <-  aggts(model, levels=1, forecasts = FALSE)
+levels_1
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,1], series="Training") +
+  autolayer(levels_1_forecasts[,1], series="Test")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,2], series="Training") +
+  autolayer(levels_1_forecasts[,2], series="Test")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,3], series="Training") +
+  autolayer(levels_1_forecasts[,3], series="Test")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,4], series="Training") +
+  autolayer(levels_1_forecasts[,4], series="Test")+theme_light()
+```
+
+```{r}
+model <- forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1)
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,1], series="Forecast")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,2], series="Forecast")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,3], series="Forecast")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,4], series="Forecast")+theme_light()
+```
+
+else
+
+```{r}
+library(tidyr)
+
+transformed_df_month <- demand_data_month %>%
+  group_by(Cluster, Date) %>%
+  summarise(Sum_Value = sum(Value)) %>%
+  spread(Cluster, Sum_Value, fill = 0)
+transformed_df_month <- ts(transformed_df_month[2:5], start=c(2015,1), frequency = 12)
+
+
+```
+
+```{r}
+transformed_forecast <- aggts(demand.ets.mo, levels = 1)
+  
+autoplot(transformed_df[,1]) +
+  autolayer(transformed_forecast[,1], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 1 mathod: mo + ETS")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.ets.bu, levels = 1)
+  
+autoplot(transformed_df[,2]) +
+  autolayer(transformed_forecast[,2], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 2 mathod: bu + ETS")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.arima.mo, levels = 1)
+  
+autoplot(transformed_df[,3]) +
+  autolayer(transformed_forecast[,3], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 3 mathod: mo + ARIMA")+
+  theme_light()
+```
+
+```{r}
+transformed_forecast <- aggts(demand.arima.mo, levels = 1)
+  
+autoplot(transformed_df[,4]) +
+  autolayer(transformed_forecast[,4], series = "Forecast") +
+  xlab("Time") + ylab("Value") +
+  ggtitle("CLuster 4 mathod: mo + ARIMA")+
+  theme_light()
+```
+
+### Autocorrelation
+
+```{r}
+library(lubridate)
+representative_data <- demand_data_month %>%
+  group_by(Cluster, Date) %>%
+  mutate(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+
+Cluster1Dataset <- representative_data %>%
+  filter(Cluster == 1)
+
+Cluster1Dataset <- unique(Cluster1Dataset[,c("Date", "mean_value")])
+
+Cluster2Dataset <- representative_data %>%
+  filter(Cluster == 2)
+Cluster2Dataset <- unique(Cluster2Dataset[,c("Date", "mean_value")])
+
+Cluster3Dataset <- representative_data %>%
+  filter(Cluster == 3)
+Cluster3Dataset <- unique(Cluster3Dataset[,c("Date", "mean_value")])
+
+Cluster4Dataset <- representative_data %>%
+  filter(Cluster == 4)
+Cluster4Dataset <- unique(Cluster4Dataset[,c("Date", "mean_value")])
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value , start = c(year(min(Cluster1Dataset$Date)), month(min(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$mean_value , start = c(year(min(Cluster2Dataset$Date)), month(min(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$mean_value , start = c(year(min(Cluster3Dataset$Date)), month(min(Cluster3Dataset$Date))), frequency = 12)
+
+ts_data4 <- ts(Cluster4Dataset$mean_value , start = c(year(min(Cluster4Dataset$Date)), month(min(Cluster4Dataset$Date))), frequency = 12)
+
+ts_data1_train <- ts(Cluster1Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data2_train <- ts(Cluster2Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data3_train <- ts(Cluster3Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data4_train <- ts(Cluster4Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+
+ts_data1_test <- ts(Cluster1Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data2_test <- ts(Cluster2Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data3_test <- ts(Cluster3Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data4_test <- ts(Cluster4Dataset$mean_value , start = c(2022,5), frequency = 12)
+
+
+```
+
+```{r}
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+```
+
+```{r}
+print("Diff")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+```
+
+```{r}
+#Auto arima
+print("Auto Arima")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+```
+
+```{r}
+#Holt's
+print("------------Cluster 1---------------")
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 2---------------")
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 3---------------")
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 4---------------")
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+```
+
+### 
+
+# CO2 EMISSIONS
+
+## Annual
+
+```{r}
+library(dplyr)
+
+data <- read.csv("Data BEFD/yearly_full_release_long_format.csv")
+
+data_eu <- subset(data, EU==1)
+contries <- unique(data_eu$Area)
+print(unique(data_eu$Area))
+```
+
+```{r}
+set.seed(1)
+demand_data <- subset(data_eu, Variable == "Total emissions")
+
+demand_data <- demand_data[,c("Area", "Country.code", "Year" ,"Value")]
+library(dplyr)
+
+# Group by 'Area' (countries) and calculate the mean for each country
+mean_demand_by_country <- demand_data%>%
+  group_by(Area) %>%
+  summarise(Mean_Demand = mean(Value, na.rm=TRUE))
+
+num_clusters <- 4
+kmeans_result <- kmeans(mean_demand_by_country$Mean_Demand, centers = num_clusters)
+
+mean_demand_by_country$Cluster <- kmeans_result$cluster
+
+# Print the resulting data frame
+#print(mean_demand_by_country)
+print(unique(mean_demand_by_country[,c("Area", "Cluster")]))
+mean_demand_by_country <- mean_demand_by_country[,c("Area", "Cluster")]
+#cluster_data <- merge(data_eu, mean_demand_by_country, by = "Area", all.x = TRUE)
+
+demand_data$Cluster <- 0
+
+for ( i in 1:nrow(demand_data)) {
+  country <- demand_data[i, 1]
+  demand_data[i, "Cluster"] <- subset(mean_demand_by_country, Area==country)$Cluster
+}
+```
+
+```{r}
+library(plotly)
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+
+# Create an interactive line plot with plotly
+plot_ly(demand_data, x = ~Year, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+ggplot(demand_data, aes(x = Year, y = Value, color = Area)) +
+  geom_line() +
+  labs(title = "Values Over Time for Different Countries",
+       x = "Year",
+       y = "Value",
+       color = "Country") +
+  theme_light()+
+  theme(panel.grid.major = element_blank())
+```
+
+```{r}
+library(plotly)
+
+plot_ly(demand_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Demand"),
+         showlegend = TRUE)
+
+ggplot(demand_data, aes(x = Year, y = Value, color = Cluster)) +
+  geom_point() +
+  labs(title = "Countries Clustered Based on Value",
+       x = "Year",
+       y = "Value",
+       color = "Cluster") +
+  scale_color_viridis(option = "D")+
+  theme_light()
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+demand_data <- demand_data %>%
+  mutate(ClustCode = paste(Cluster, Country.code, sep=""))
+
+
+
+# Assuming your data frame is called "your_data"
+# Replace "your_data" with the actual name of your data frame
+
+# Grouping by Cluster and extracting unique countries for each cluster
+country_lists <- demand_data %>%
+  group_by(Cluster) %>%
+  summarize(Countries = toString(unique(ClustCode)))
+
+# Printing the result
+print(country_lists)
+
+demand_hts <- demand_data[,c("Year", "Value", "ClustCode")]
+
+
+
+new_demand_hts <- data.frame(matrix(NA, nrow = 23, ncol = 27))
+colnames(new_demand_hts) <- unique(demand_hts$ClustCode)
+rownames(new_demand_hts) <- unique(demand_hts$Year)
+
+for (code in unique(demand_data$ClustCode)){
+  for (year in 2000:2022){
+    new_demand_hts[as.character(year), code] <- demand_hts[demand_hts$ClustCode == code & demand_hts$Year == year, ]$Value
+  }
+}
+
+demand_hts <- ts(new_demand_hts, start=2000)
+  
+
+demand_hts_result <- hts(demand_hts, characters = c(1, 3))
+
+#plot(demand_hts_result, include = 16, levels = 1)
+
+demand_hts_result %>% aggts(levels=1) %>%
+  autoplot() +
+  xlab("Year") + ylab("CO2 emissions") + ggtitle("Cluster")+
+  theme_light()
+
+```
+
+```{r}
+library(hts)
+library(fpp2)
+#aggts1 <- aggts(demand_hts_result)
+#aggts2 <- aggts(demand_hts_result, levels = 1)
+#aggts3 <- aggts(demand_hts_result, levels = c(0, 2))
+
+# demand.bu<-  forecast(
+#   demand_hts_result, h = 4, method = "bu", fmethod = "ets", parallel = TRUE
+# )
+# #aggts4 <- aggts(demand.bu)
+# print("---------BU---------")
+# 
+# summary(demand.bu)
+# plot(demand.bu, levels = 1)
+
+#Error-Trend-Seasonal method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.ets.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "ets")
+demand.ets.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "ets", level=1)
+demand.ets.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "ets")
+demand.ets.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "ets")
+demand.ets.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "ets")
+
+print("------ETS---------")
+accuracy(demand.ets.bu, demand.test, levels = 1)
+accuracy(demand.ets.mo, demand.test, levels = 1)
+accuracy(demand.ets.tdgsa, demand.test, levels = 1)
+accuracy(demand.ets.tdfp, demand.test, levels = 1)
+accuracy(demand.ets.comb, demand.test, levels = 1)
+plot(demand.ets.bu, levels = 1) 
+
+
+#Random walk method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.rw.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "rw")
+demand.rw.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "rw", level=1)
+demand.rw.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "rw")
+demand.rw.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "rw")
+demand.rw.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "rw")
+
+print("------RW---------")
+accuracy(demand.rw.bu, demand.test, levels = 1)
+accuracy(demand.rw.mo, demand.test, levels = 1)
+accuracy(demand.rw.tdgsa, demand.test, levels = 1)
+accuracy(demand.rw.tdfp, demand.test, levels = 1)
+accuracy(demand.rw.comb, demand.test, levels = 1)
+plot(demand.rw.bu, levels = 1) 
+
+#ARIMA method
+
+demand.train <- window(demand_hts_result, start = 2000, end = 2016)
+demand.test <- window(demand_hts_result, start = 2017)
+
+demand.arima.bu <- forecast(demand.train, h = 6, method = "bu", fmethod = "arima")
+demand.arima.mo <- forecast(demand.train, h = 6, method = "mo", fmethod = "arima", level=1)
+demand.arima.tdgsa <- forecast(demand.train, h = 6, method = "tdgsa", fmethod = "arima")
+demand.arima.tdfp <- forecast(demand.train, h = 6, method = "tdfp", fmethod = "arima")
+demand.arima.comb <- forecast(demand.train, h = 6, method = "comb", fmethod = "arima")
+
+print("------ARIMA---------")
+accuracy(demand.arima.bu, demand.test, levels = 1)
+accuracy(demand.arima.mo, demand.test, levels = 1)
+accuracy(demand.arima.tdgsa, demand.test, levels = 1)
+accuracy(demand.arima.tdfp, demand.test, levels = 1)
+accuracy(demand.arima.comb, demand.test, levels = 1)
+plot(demand.arima.bu, levels = 1) 
+
+```
+
+```{r}
+plot(demand.arima.tdgsa, level=1)
+final <- forecast(demand_hts_result, h = 6, method = "tdgsa", fmethod = "arima")
+plot(final, levels=1)
+```
+
+#### Future
+
+smth
+
+```{r}
+model <- demand.arima.mo
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+levels_1 <-  aggts(model, levels=1, forecasts = FALSE)
+levels_1
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,1], series="Training") +
+  autolayer(levels_1_forecasts[,1], series="Test")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,2], series="Training") +
+  autolayer(levels_1_forecasts[,2], series="Test")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,3], series="Training") +
+  autolayer(levels_1_forecasts[,3], series="Test")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,4], series="Training") +
+  autolayer(levels_1_forecasts[,4], series="Test")+theme_light()
+```
+
+```{r}
+model <- forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1)
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,1], series="Forecast")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,2], series="Forecast")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,3], series="Forecast")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,4], series="Forecast")+theme_light()
+```
+
+else
+
+### Testing other
+
+```{r}
+representative_data <- demand_data %>%
+  group_by(Cluster, Year) %>%
+  mutate(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+
+Cluster1Dataset <- representative_data %>%
+  filter(Cluster == 1)
+
+Cluster1Dataset <- unique(Cluster1Dataset[,c("Year", "mean_value")])
+
+Cluster2Dataset <- representative_data %>%
+  filter(Cluster == 2)
+Cluster2Dataset <- unique(Cluster2Dataset[,c("Year", "mean_value")])
+
+Cluster3Dataset <- representative_data %>%
+  filter(Cluster == 3)
+Cluster3Dataset <- unique(Cluster3Dataset[,c("Year", "mean_value")])
+
+Cluster4Dataset <- representative_data %>%
+  filter(Cluster == 4)
+Cluster4Dataset <- unique(Cluster4Dataset[,c("Year", "mean_value")])
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value , start = min(Cluster1Dataset$Year), frequency = 1)
+ts_data2 <- ts(Cluster2Dataset$mean_value , start = min(Cluster2Dataset$Year), frequency = 1)
+ts_data3 <- ts(Cluster3Dataset$mean_value , start = min(Cluster3Dataset$Year), frequency = 1)
+ts_data4 <- ts(Cluster4Dataset$mean_value , start = min(Cluster4Dataset$Year), frequency = 1)
+
+ts_data1_train <- ts(Cluster1Dataset$mean_value , start = min(Cluster1Dataset$Year),end = 2016, frequency = 1)
+ts_data2_train <- ts(Cluster2Dataset$mean_value , start = min(Cluster2Dataset$Year),end =2016, frequency = 1)
+ts_data3_train <- ts(Cluster3Dataset$mean_value , start = min(Cluster3Dataset$Year),end=2016, frequency = 1)
+ts_data4_train <- ts(Cluster4Dataset$mean_value , start = min(Cluster4Dataset$Year), end=2016, frequency = 1)
+
+ts_data1_test <- ts(Cluster1Dataset$mean_value , start = 2017, frequency = 1)
+ts_data2_test <- ts(Cluster2Dataset$mean_value , start = 2017, frequency = 1)
+ts_data3_test <- ts(Cluster3Dataset$mean_value , start = 2017, frequency = 1)
+ts_data4_test <- ts(Cluster4Dataset$mean_value , start = 2017, frequency = 1)
+
+```
+
+```{r}
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+```
+
+```{r}
+print("Diff")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+```
+
+```{r}
+#Auto arima
+print("Auto Arima")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+```
+
+```{r}
+#Holt's
+print("------------Cluster 1---------------")
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 2---------------")
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 3---------------")
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 4---------------")
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=1),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+```
+
+```{r}
+
+```
+
+## Monthly 
+
+```{r}
+data_month <- read.csv("Data BEFD/monthly_full_release_long_format-4.csv")
+
+data_eu_month <- subset(data_month, EU==1)
+contries <- unique(data_eu_month$Area)
+print(unique(data_eu$Area))
+```
+
+```{r}
+set.seed(1)
+demand_data_month <- subset(data_eu_month, Variable == "Total emissions")
+demand_data_month <- demand_data_month[,c("Area", "Country.code", "Date" ,"Value")]
+demand_data_month <- subset(demand_data_month, Date >= as.Date("2015-01-01"))
+
+```
+
+```{r}
+library(dplyr)
+
+# Group by 'Area' (countries) and calculate the mean for each country
+mean_demand_by_country_month <- demand_data_month%>%
+  group_by(Area) %>%
+  summarise(Mean_Demand = mean(Value, na.rm=TRUE))
+
+num_clusters <- 4
+kmeans_result_month <- kmeans(mean_demand_by_country_month$Mean_Demand, centers = num_clusters)
+
+mean_demand_by_country_month$Cluster <- kmeans_result$cluster
+
+# Print the resulting data frame
+#print(mean_demand_by_country)
+print(unique(mean_demand_by_country_month[,c("Area", "Cluster")]))
+mean_demand_by_country_month <- mean_demand_by_country_month[,c("Area", "Cluster")]
+
+
+demand_data_month$Cluster <- 0
+
+for ( i in 1:nrow(demand_data_month)) {
+  country <- demand_data_month[i, 1]
+  demand_data_month[i, "Cluster"] <- subset(mean_demand_by_country_month, Area==country)$Cluster
+}
+```
+
+```{r}
+library(plotly)
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+
+# Create an interactive line plot with plotly
+plot_ly(demand_data_month, x = ~Date, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Date"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+ggplot(demand_data_month, aes(x = Date, y = Value, color = Area, group = Area)) +
+  geom_line() +
+  labs(title = "Values Over Time for Different Countries",
+       x = "Year",
+       y = "Value",
+       color = "Country") +
+  theme_light()+
+  theme(panel.grid.major = element_blank())
+```
+
+```{r}
+library(plotly)
+
+plot_ly(demand_data_month, x = ~Date, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "CO2 emissions"),
+         showlegend = TRUE)
+
+ggplot(demand_data_month, aes(x = Date, y = Value, color = Cluster)) +
+  geom_point() +
+  labs(title = "Countries Clustered Based on Value",
+       x = "Year",
+       y = "Value",
+       color = "Cluster") +
+  scale_color_viridis(option = "D")+
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(hts)
+
+demand_data_month <- demand_data_month %>%
+  mutate(ClustCode = paste(Cluster, Country.code, sep=""))
+
+
+
+# Assuming your data frame is called "your_data"
+# Replace "your_data" with the actual name of your data frame
+
+# Grouping by Cluster and extracting unique countries for each cluster
+country_lists <- demand_data_month %>%
+  group_by(Cluster) %>%
+  summarize(Countries = toString(unique(ClustCode)))
+
+# Printing the result
+print(country_lists)
+
+demand_hts_month <- demand_data_month[,c("Date", "Value", "ClustCode")]
+
+
+
+new_demand_hts_month <- data.frame(matrix(NA, nrow = length(unique(demand_hts_month$Date)), ncol = 27))
+colnames(new_demand_hts_month) <- unique(demand_hts_month$ClustCode)
+rownames(new_demand_hts_month) <- unique(demand_hts_month$Date)
+
+for (code in unique(demand_hts_month$ClustCode)) {
+  for (dat in unique(demand_hts_month$Date)) {
+    if(length
+       (demand_hts_month[demand_hts_month$ClustCode == code & demand_hts_month$Date == dat, ]$Value) == 0) {new_demand_hts_month[dat, code] <- NA}
+    else{
+      new_demand_hts_month[dat, code] <- demand_hts_month[demand_hts_month$ClustCode == code & demand_hts_month$Date == dat, ]$Value
+    }
+  }
+}
+
+demand_hts_month <- new_demand_hts_month
+
+for(i in 1:ncol(demand_hts_month)){
+  demand_hts_month[is.na(demand_hts_month[,i]), i] <- mean(demand_hts_month[,i], na.rm = TRUE)
+}
+
+
+demand_hts_month <- ts(demand_hts_month, start=c(2015, 1), frequency = 12)
+demand_hts_result_month <- hts(demand_hts_month, characters = c(1, 3))
+
+#plot(demand_hts_result, include = 16, levels = 1)
+
+ demand_hts_result_month %>% aggts(levels=1) %>%
+   autoplot() +
+   xlab("Year") + ylab("CO2 emissions") + ggtitle("MONTHLY DATA")+
+   theme_light()
+
+
+```
+
+```{r}
+library(hts)
+library(fpp2)
+#aggts1 <- aggts(demand_hts_result)
+#aggts2 <- aggts(demand_hts_result, levels = 1)
+#aggts3 <- aggts(demand_hts_result, levels = c(0, 2))
+
+demand_hts_result <- demand_hts_result_month
+hh <- 18
+
+
+demand.train <- window(demand_hts_result, start = c(2015,1), end = c(2022, 4))
+demand.test <- window(demand_hts_result, start = c(2022, 5))
+
+demand.ets.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "ets")
+demand.ets.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "ets", level=1)
+demand.ets.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "ets")
+demand.ets.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "ets")
+demand.ets.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "ets")
+
+print("------ETS---------")
+accuracy(demand.ets.bu, demand.test, levels = 1)
+accuracy(demand.ets.mo, demand.test, levels = 1)
+accuracy(demand.ets.tdgsa, demand.test, levels = 1)
+accuracy(demand.ets.tdfp, demand.test, levels = 1)
+accuracy(demand.ets.comb, demand.test, levels = 1)
+ plot(demand.ets.bu, levels = 1)
+ 
+ 
+#Random walk method
+
+demand.rw.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "rw")
+demand.rw.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "rw", level=1)
+demand.rw.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "rw")
+demand.rw.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "rw")
+demand.rw.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "rw")
+
+print("------RW---------")
+accuracy(demand.rw.bu, demand.test, levels = 1)
+accuracy(demand.rw.mo, demand.test, levels = 1)
+accuracy(demand.rw.tdgsa, demand.test, levels = 1)
+accuracy(demand.rw.tdfp, demand.test, levels = 1)
+accuracy(demand.rw.comb, demand.test, levels = 1)
+plot(demand.rw.bu, levels = 1)
+
+#ARIMA method
+
+demand.arima.bu <- forecast(demand.train, h = hh, method = "bu", fmethod = "arima")
+demand.arima.mo <- forecast(demand.train, h = hh, method = "mo", fmethod = "arima", level=1)
+demand.arima.tdgsa <- forecast(demand.train, h = hh, method = "tdgsa", fmethod = "arima")
+demand.arima.tdfp <- forecast(demand.train, h = hh, method = "tdfp", fmethod = "arima")
+demand.arima.comb <- forecast(demand.train, h = hh, method = "comb", fmethod = "arima")
+
+print("------ARIMA---------")
+accuracy(demand.arima.bu, demand.test, levels = 1)
+accuracy(demand.arima.mo, demand.test, levels = 1)
+accuracy(demand.arima.tdgsa, demand.test, levels = 1)
+accuracy(demand.arima.tdfp, demand.test, levels = 1)
+accuracy(demand.arima.comb, demand.test, levels = 1)
+plot(demand.arima.bu, levels = 1)
+
+```
+
+```{r}
+plot(demand.arima.mo, levels = 1)
+plot(forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1), levels=1)
+```
+
+```{r}
+final <- forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1)
+plot(final, levels=1)
+
+```
+
+smth
+
+```{r}
+model <- demand.arima.mo
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+levels_1 <-  aggts(model, levels=1, forecasts = FALSE)
+levels_1
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,1], series="Training") +
+  autolayer(levels_1_forecasts[,1], series="Test")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,2], series="Training") +
+  autolayer(levels_1_forecasts[,2], series="Test")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,3], series="Training") +
+  autolayer(levels_1_forecasts[,3], series="Test")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1[,4], series="Training") +
+  autolayer(levels_1_forecasts[,4], series="Test")+theme_light()
+```
+
+```{r}
+model <- forecast(demand_hts_result, h = hh, method = "mo", fmethod = "arima", level=1)
+all_data <- aggts(demand_hts_result, levels=1)
+levels_1_forecasts <- aggts(model, levels=1, forecasts = TRUE)
+levels_1_forecasts
+
+
+autoplot(all_data[,1], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,1], series="Forecast")+theme_light()
+
+autoplot(all_data[,2], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,2], series="Forecast")+theme_light()
+
+autoplot(all_data[,3], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,3], series="Forecast")+theme_light()
+
+autoplot(all_data[,4], ylab="Electricity demand", xlab="Date", main="Electricity Demand") +
+  autolayer(levels_1_forecasts[,4], series="Forecast")+theme_light()
+```
+
+else
+
+### 
+
+### Autocorrelation
+
+```{r}
+library(lubridate)
+representative_data <- demand_data_month %>%
+  group_by(Cluster, Date) %>%
+  mutate(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+
+Cluster1Dataset <- representative_data %>%
+  filter(Cluster == 1)
+
+Cluster1Dataset <- unique(Cluster1Dataset[,c("Date", "mean_value")])
+
+Cluster2Dataset <- representative_data %>%
+  filter(Cluster == 2)
+Cluster2Dataset <- unique(Cluster2Dataset[,c("Date", "mean_value")])
+
+Cluster3Dataset <- representative_data %>%
+  filter(Cluster == 3)
+Cluster3Dataset <- unique(Cluster3Dataset[,c("Date", "mean_value")])
+
+Cluster4Dataset <- representative_data %>%
+  filter(Cluster == 4)
+Cluster4Dataset <- unique(Cluster4Dataset[,c("Date", "mean_value")])
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value , start = c(year(min(Cluster1Dataset$Date)), month(min(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$mean_value , start = c(year(min(Cluster2Dataset$Date)), month(min(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$mean_value , start = c(year(min(Cluster3Dataset$Date)), month(min(Cluster3Dataset$Date))), frequency = 12)
+
+ts_data4 <- ts(Cluster4Dataset$mean_value , start = c(year(min(Cluster4Dataset$Date)), month(min(Cluster4Dataset$Date))), frequency = 12)
+
+ts_data1_train <- ts(Cluster1Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data2_train <- ts(Cluster2Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data3_train <- ts(Cluster3Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+ts_data4_train <- ts(Cluster4Dataset$mean_value , start = c(2015,1),end = c(2022,4), frequency = 12)
+
+ts_data1_test <- ts(Cluster1Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data2_test <- ts(Cluster2Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data3_test <- ts(Cluster3Dataset$mean_value , start = c(2022,5), frequency = 12)
+ts_data4_test <- ts(Cluster4Dataset$mean_value , start = c(2022,5), frequency = 12)
+
+
+```
+
+```{r}
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+cl.mean <- meanf(tr)
+cl.rwf <- rwf(tr)
+cl.rwf.drift <- rwf(tr, drift = TRUE)
+cl.naive <- naive(tr)
+
+print("----MEAN----")
+#checkresiduals(cl.mean)
+accuracy(cl.mean, ts)
+print("----RWF----")
+#checkresiduals(cl.rwf)
+accuracy(cl.rwf, ts)
+print("----RWF-DRIFT----")
+#checkresiduals(cl.rwf.drift)
+accuracy(cl.rwf.drift, ts)
+print("----NAIVE----")
+#checkresiduals(cl.naive)
+accuracy(cl.naive, ts)
+```
+
+```{r}
+print("Diff")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+fit<- ses(diff,alpha=0.6, h=5)
+
+#checkresiduals(fit)
+accuracy(fit, ts)
+
+```
+
+```{r}
+#Auto arima
+print("Auto Arima")
+print("------------Cluster 1---------------")
+
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 2---------------")
+
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 3---------------")
+
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+print("------------Cluster 4---------------")
+
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+model<- auto.arima(tr)
+forecast_ts <- forecast(model, h = length(ts))
+
+#checkresiduals(fit)
+accuracy(forecast_ts, ts)
+```
+
+```{r}
+#Holt's
+print("------------Cluster 1---------------")
+tr <- ts_data1_train
+ts <- ts_data1_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 2---------------")
+tr <- ts_data2_train
+ts <- ts_data2_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 3---------------")
+tr <- ts_data3_train
+ts <- ts_data3_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+print("------------Cluster 4---------------")
+tr <- ts_data4_train
+ts <- ts_data4_test
+
+diff<- diff(diff(log(tr), lag=12),lag=1)
+f1<- holt(diff, h=length(ts))
+f1_2<- holt(diff, damped=T, phi=0.9, h=15)
+
+print("Holt's")
+accuracy(f1, ts)
+print("Holt's damped")
+accuracy(f1_2, ts)
+
+```
+
+### 
+
+# GENERATION
+
+# Old part
+
+```{r}
+# Install and load necessary packages
+#install.packages("plotly")
+library(plotly)
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+
+# Create an interactive line plot with plotly
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+```
+
+```{r}
+# Assuming 'subset_dataset' is your data frame with 'Area', 'Value', and 'Year' columns
+
+# Extract the 'Value' column for clustering
+data_for_clustering <- subset_data$Value
+
+# Set the number of clusters (adjust as needed)
+num_clusters <- 4
+
+# Perform k-means clustering
+kmeans_result <- kmeans(data_for_clustering, centers = num_clusters)
+
+# Add the cluster labels to your original data frame
+subset_data$Cluster <- as.factor(kmeans_result$cluster)
+
+# Print the cluster centers
+print(kmeans_result$centers)
+
+# Visualize the clusters
+# library(ggplot2)
+# ggplot(subset_data, aes(x = Year, y = Value, color = Cluster)) +
+#   geom_point() +
+#   labs(title = "Countries Clustered Based on Value",
+#        x = "Year",
+#        y = "Value",
+#        color = "Cluster") +
+#   theme_minimal()
+
+
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Countries Clustered Based on Value",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+```
+
+```{r}
+# Assuming 'subset_dataset' is your data frame with 'Area', 'Value', 'Year', and 'Cluster' columns
+
+# Group by Cluster and Year, then calculate the mean
+cluster_means <- subset_data %>%
+  group_by(Cluster, Year) %>%
+  summarise(Value = mean(Value))
+
+# Print the resulting data frame
+print(cluster_means)
+
+library(plotly)
+
+plot_ly(cluster_means, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "lines") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Value"),
+         showlegend = TRUE)
+```
+
+### Ex-ante versus ex-post forecasts
+
+```{r}
+c <- 4
+d <- subset(cluster_means, Cluster==c)
+demand <- ts(d$Value, start=2000)
+fit.demand <- tslm(demand ~ trend)
+fcast <- forecast(fit.demand)
+autoplot(fcast) +
+  ggtitle("Forecasts of demand for Cluster",c ) +
+  xlab("Year") + ylab("TWh")
+
+CV(fit.demand)
+```
+
+```{r}
+
+h <- 5
+fit.lin <- tslm(demand ~ trend)
+fcasts.lin <- forecast(fit.lin, h = h)
+fit.exp <- tslm(demand ~ trend, lambda = 2)
+fcasts.exp <- forecast(fit.exp, h = h)
+
+t <- time(demand)
+t.break1 <- 2008
+t.break2 <- 2012
+tb1 <- ts(pmax(0, t - t.break1), start = 2000)
+tb2 <- ts(pmax(0, t - t.break2), start = 2000)
+
+fit.pw <- tslm(demand ~ t + tb1 + tb2)
+t.new <- t[length(t)] + seq(h)
+tb1.new <- tb1[length(tb1)] + seq(h)
+tb2.new <- tb2[length(tb2)] + seq(h)
+
+newdata <- cbind(t=t.new, tb1=tb1.new, tb2=tb2.new) %>%
+  as.data.frame()
+fcasts.pw <- forecast(fit.pw, newdata = newdata)
+
+fit.spline <- tslm(demand ~ t + I(t^2) + I(t^3) +
+  I(tb1^3) + I(tb2^3))
+fcasts.spl <- forecast(fit.spline, newdata = newdata)
+
+autoplot(demand) +
+  autolayer(fitted(fit.exp), series = "Exponential") +
+  autolayer(fitted(fit.pw), series = "Piecewise") +
+  autolayer(fitted(fit.spline), series = "Cubic Spline") +
+  autolayer(fcasts.pw, series="Piecewise") +
+  autolayer(fcasts.exp, series="Exponential", PI=FALSE) +
+  autolayer(fcasts.spl, series="Cubic Spline", PI=FALSE) +
+  xlab("Year") + ylab("Demand for Cluster 1") +
+  ggtitle("Boston Marathon") +
+  guides(colour = guide_legend(title = " "))
+print("Linear")
+CV(fit.lin)
+print("Exonential")
+CV(fit.exp)
+print("Piecewise")
+CV(fit.pw)
+print("Cubic SPline")
+CV(fit.spline)
+```
+
+```{r}
+demand %>%
+  splinef(lambda=0) %>%
+  checkresiduals()
+```
+
+Splitting into trend cycle
+
+```{r}
+c <- 4
+d <- subset(cluster_means, Cluster==c)
+demand <- ts(d$Value, start=2000)
+
+demand %>% decompose(type="multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Classical multiplicative decomposition
+    of electrical equipment index")
+```
+
+```{r}
+demand %>% diff(lag=4) %>% ggtsdisplay()
+
+demand %>% diff(lag=4) %>% diff() %>% ggtsdisplay()
+
+demand %>%
+  Arima(order=c(0,1,1), seasonal=c(0,1,1)) %>%
+  residuals() %>% ggtsdisplay()
+```
+
+```{r}
+fit3 <- Arima(demand, order=c(0,1,1))
+checkresiduals(fit3)
+
+fit3 %>% forecast(h=5) %>% autoplot()
+summary(fit3)
+
+```
+
+```{r}
+
+auto.arima(demand)
+```
+
+Exponential smoothing
+
+```{r}
+c <- 4
+d <- subset(cluster_means, Cluster==c)
+demand <- ts(d$Value, start=2000)
+
+autoplot(demand) +
+  ylab("Demand") + xlab("Year")
+
+fc <- ses(demand, h=5)
+# Accuracy of one-step-ahead training errors
+round(accuracy(fc),2)
+
+autoplot(fc) +
+  autolayer(fitted(fc), series="Fitted") +
+  ylab("Demand") + xlab("Year")
+
+summary(fc)
+
+
+```
+
+```{r}
+fc <- holt(demand, h=5)
+fc2 <- holt(demand, damped=TRUE, phi = 0.9, h=5)
+autoplot(demand) +
+  autolayer(fc, series="Holt's method", PI=FALSE) +
+  autolayer(fc2, series="Damped Holt's method", PI=FALSE) +
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Demand") +
+  guides(colour=guide_legend(title="Forecast"))
+```
+
+```{r}
+e1 <- tsCV(demand, ses, h=1)
+e2 <- tsCV(demand, holt, h=1)
+e3 <- tsCV(demand, holt, damped=TRUE, h=1)
+# Compare MSE:
+mean(e1^2, na.rm=TRUE)
+
+mean(e2^2, na.rm=TRUE)
+
+mean(e3^2, na.rm=TRUE)
+
+mean(abs(e1), na.rm=TRUE)
+
+mean(abs(e2), na.rm=TRUE)
+
+mean(abs(e3), na.rm=TRUE)
+
+
+fc <- holt(demand, damped=TRUE)
+# Estimated parameters:
+fc[["model"]]
+
+autoplot(fc) +
+  xlab("Year") + ylab("Demand")
+```
+
+Grouped
+
+```{r}
+library(hts)
+
+# Assuming your dataset is named cluster_means
+d <- data.frame(cluster_means$Cluster, cluster_means$Value)
+colnames(d) <- c("Cluster", "Value")
+d <- ts(d) 
+tourism.hts <- hts(Value, characters = 1, data = d)
+
+tourism.hts %>% aggts(levels = 1) %>%
+  autoplot(facet = TRUE) +
+  xlab("Year") + ylab("Values") + ggtitle("Cluster Means Data")
+
+```
+
+```{r}
+nodes <- list(2, c(3, 2))
+abc <- ts(5 + matrix(sort(rnorm(500)), ncol = 5, nrow = 100))
+x <- hts(abc, nodes)
+print("ABC")
+print(abc)
+print("X")
+print(x)
+```
+
+```{r}
+demand_with_clusters <- subset_data
+selected_columns <- c("Year", "Cluster","Area", "Value")
+demand_with_clusters <- demand_with_clusters[, selected_columns]
+
+hts_data <- hts(demand_with_clusters, characters = c(1, 1), nodes = list(demand_with_clusters$Area, demand_with_clusters$Cluster))
+print(hts_data)
+
+```
+
+```{r}
+# Assuming your data frame is named 'your_data_frame'
+# Assuming 'Cluster' is the first level of hierarchy and 'Area' is the second level
+
+# Apply the hts function
+hts_data <- hts(demand_with_clusters$Value, characters = c(1, 1), nodes = list(demand_with_clusters$Cluster, demand_with_clusters$Area))
+
+# Print the hierarchical time series data
+print(hts_data)
+
+```
+
+```{r}
+nodes <- list(2, c(3, 2))
+print(abc)
+abc <- ts(5 + matrix(sort(rnorm(50)), ncol = 5, nrow = 10))
+x <- hts(abc, nodes)
+print(x)
+```
+
+```{r}
+library(hts)
+abc <- ts(5 + matrix(sort(rnorm(40)), ncol = 4, nrow = 10))
+colnames(abc) <- c("1DEU","1FRA", "2POL", "2SLO")
+y <- hts(abc, characters = c(1, 3))
+
+y %>% aggts(levels=0:2) %>%
+  autoplot(facet=TRUE) +
+  xlab("Year") + ylab("millions") + ggtitle("Visitor nights")
+```
+
+```{r}
+
+d <- subset_data[,c("Year", "Country.code", "Value")]
+
+
+# Assuming your data frame is named 'your_data_frame'
+# Load the tidyr package
+library(tidyr)
+
+# Pivot the data frame
+pivoted_data <- pivot_wider(d, names_from = Country.code, values_from = Value)
+pivoted_data <- pivoted_data[,2:28]
+# Print the pivoted data
+print(pivoted_data)
+
+c <- colnames(pivoted_data)
+u_c <- unique(subset_data[,c("Country.code","Cluster")])
+```
+
+```{r}
+# Extract the 'Value' column for clustering
+data_for_clustering <- subset_data$Value
+
+# Set the number of clusters (adjust as needed)
+num_clusters <- 4
+
+# Perform k-means clustering
+kmeans_result <- kmeans(data_for_clustering, centers = num_clusters)
+
+# Add the cluster labels to your original data frame
+subset_data$Cluster <- as.factor(kmeans_result$cluster)
+
+# Print the cluster centers
+print(kmeans_result$centers)
+
+# Visualize the clusters
+# library(ggplot2)
+# ggplot(subset_data, aes(x = Year, y = Value, color = Cluster)) +
+#   geom_point() +
+#   labs(title = "Countries Clustered Based on Value",
+#        x = "Year",
+#        y = "Value",
+#        color = "Cluster") +
+#   theme_minimal()
+
+
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Countries Clustered Based on Value",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+
+# Group by Cluster and Year, then calculate the mean
+cluster_means <- subset_data %>%
+  group_by(Cluster, Year) %>%
+  summarise(Value = mean(Value))
+
+# Print the resulting data frame
+print(cluster_means)
+
+library(plotly)
+
+plot_ly(cluster_means, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "lines") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Value"),
+         showlegend = TRUE)
+```
+
+```{r}
+# Assuming your data frame is named 'df'
+# Select relevant columns
+df <- data_eu[, c("Area", "Value", "Year", "Country.code")]
+data_for_clustering <- df[, c("Value", "Year")]
+
+# Standardize the data to have zero mean and unit variance
+scaled_data <- scale(data_for_clustering)
+
+# Perform K-means clustering with 4 clusters
+num_clusters <- 4
+kmeans_result <- kmeans(scaled_data, centers = num_clusters)
+
+# Add the cluster labels back to the original data frame
+df$Cluster <- as.factor(kmeans_result$cluster)
+
+# Print the resulting data frame with cluster labels
+print(df)
+
+```
+
+```{r}
+# Assuming your data frame is named 'df'
+library(dplyr)
+
+# Group by 'Area' (countries) and calculate the mean for each country
+mean_demand_by_country <- data_eu%>%
+  group_by(Area) %>%
+  summarise(Mean_Demand = mean(Value, na.rm=TRUE))
+
+num_clusters <- 4
+kmeans_result <- kmeans(mean_demand_by_country$Mean_Demand, centers = num_clusters)
+
+mean_demand_by_country$Cluster <- kmeans_result$cluster
+
+# Print the resulting data frame
+print(mean_demand_by_country)
+print(unique(mean_demand_by_country[,c("Area", "Cluster")]))
+mean_demand_by_country <- mean_demand_by_country[,c("Area", "Cluster")]
+cluster_data <- merge(data_eu, mean_demand_by_country, by = "Area", all.x = TRUE)
+
+cluster_data <- unique(cluster_data)
+
+cluster_data <- cluster_data %>%
+  mutate(ClustCode = paste(Country.code, Cluster, sep=""))
+
+print(unique(cluster_data[,c("Country.code", "Cluster")]))
+print(unique(cluster_data[,"ClustCode"]))
+
+data_hts <- cluster_data[,c("Year", "Value", "ClustCode")]
+library(tidyr)
+
+
+#data_hts <- pivot_wider(data_hts, names_from = ClustCode, values_from = Value)
+
+# Print the updated dataframe
+#print(wide_data)
+
+```
+
+```{r}
+# Example data frames
+df1 <- data.frame(Area = c("A", "B", "C"), Cluster = c(1, 2, 1))
+df2 <- data.frame(Area = c("A", "B", "C", "A", "B", "C"),
+                  Year = c(2020, 2020, 2020, 2021, 2021, 2021),
+                  Value = c(10, 15, 12, 11, 18, 14))
+
+# Merge data frames based on the 'Area' column
+merged_df <- merge(df2, df1, by = "Area", all.x = TRUE)
+
+# Print the result
+print(merged_df)
+
+```

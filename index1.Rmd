@@ -1,0 +1,4126 @@
+---
+title: "Time-Series Analysis for Renewable Energies Data"
+author: "Skurativska Kateryna, Zolghadr Sharare"
+date: "2023-10-24"
+output:
+  html_document:
+    toc: true
+    number_sections: true
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Our aim is to analyze energy consumption, especially renewable energies and how it changes over the years. We limit our analysis only for EU-area, as it has more information about renewable energies than any other area. Our plan is to try to answer on the following questions:
+
+1.  Renewable Energy Adoption and Growth
+    1.  How does it evolve over time?
+    2.  Can we forecast the future growth in a specific region?
+    3.  What factors influence the growth?
+    4.  What are seasonal and annual trends in renewable energy production and how do they impact energy supply and demand?
+2.  Electricity price forecasting 1. Can we predict electricity prices based on the availability of renewable energy sources? 2. How does integration impact price volatility?
+3.  Carbon emission reduction
+    1.  How does growth of renewable energy sources contribute to a reduction in carbon
+    2.  Can we estimate the potential impact of future renewable energy adoption on future carbon emissions?
+
+The analysis will be made general for the EU and for each country separately.
+
+Data we need:
+
+1.  Energy consumption for each country annually and monthly for each type of energy production
+
+2.  Electricity prices for each country during the same period
+
+3.  CO2 emisions for each country
+
+# 1.Obtaining Data
+
+**Datasets** Our core data covers the following subjects:
+
+\-  Electricity **generation** (TWh), provided both by fuel type and aggregated -  Electricity **net imports** (TWh) -  Electricity **demand** (TWh), calculated as the sum of power production and net imports -  Installed power generation **capacity** (GW), broken down by fuel type -  **Emissions** from electricity generation (Mt CO2e), calculated from IPCC emissions factors
+
+**Fuel Types**
+
+In our global dataset, fuel data is mapped into nine generation types: Bioenergy, Coal, Gas, Hydro, Nuclear, Other Fossil, Other Renewables, Solar, and Wind. In our European dataset, Coal is further split into Hard Coal and Lignite.
+
+**Overview**
+
+Ember releases time series data of power **generation**, broken down by fuel type, and power **imports**. These figures are then combined to produce a total power **demand** time series for each country. "% share" values refer to the share of generation (this does not include net imports) and not the share of consumption unless otherwise specified. We provide data for 215 countries from 2000 to 2021, and where possible have gathered 2022 data using national sources.
+
+Compiling a full dataset from 2000 to 2022 requires using data at multiple timescales. Annual generation data is collected from both national and multi-country sources. For the most recent years, data is often not available. In these cases we use monthly data, which is reported on a shorter lag, to estimate the latest annual generation.
+
+Power data is gathered in a wide variety of formats from multiple sources. In addition to this reconciliation, our data requires considerable cleaning and adjustment of the raw data reported. An overview of our methods is below.
+
+```{r}
+# Assuming your dataset is named 'your_dataset'
+library(dplyr)
+data <- read.csv("DATA BEFD/monthly_full_release_long_format-4.csv")
+
+
+data <- data %>%
+  filter(!grepl("%", Unit))
+
+# Now 'your_dataset' contains rows where the "Unit" column does not contain "%"
+
+head(data)
+```
+
+exploring and understanding the unique values, structure, and summary statistics of the provided dataset, specifically focusing on the subset related to demand in the European Union
+
+```{r}
+"These code segments collectively aim to explore and understand the unique values, structure, and summary statistics of the provided dataset, specifically focusing on the subset related to demand in the European Union."
+
+sapply(data, function(x) length(unique(x)))
+for (col in names(data)) {
+  #cat("Column:", col, "\n")
+  #print(unique(renewable[[col]]))
+}
+
+
+# Assuming your dataset is named 'your_data'
+dataset_Demand <- data[data$EU == "1" & data$Subcategory == "Demand", ]
+
+summary(dataset_Demand)
+```
+
+# Monthly data analysis
+
+# EU electricity demand
+
+## Electricity demand started to fall fast
+
+In late 2022, the European Union experienced a notable 7.9% decline in electricity demand, comparable to the most severe Covid-19 lockdowns. This led to reduced coal and gas generation. The drop in electricity demand continued into 2023, prompting questions about whether it's a structural shift or temporary. Mild temperatures played a role, with October to December 2022 being warmer than the previous year. Despite this, the decline in demand is complex, suggesting broader factors at play.
+
+The significant drop in electricity demand at the close of 2022 stems from various factors, including efficiency improvements, altered industrial practices, and shifts in consumer behavior due to rising electricity costs and reactions in solidarity against Russia's invasion.. The duration and permanence of this decline remain uncertain, posing challenges for future demand forecasting. However, the crisis has accelerated electrification trends, marked by increased sales of heat pumps, electric vehicles, and hydrogen electrolysers. Despite the current dip in demand, there is a crucial need to sustain efforts in transitioning to clean energy.
+
+a visual representation of how monthly demand varies over time for different countries.
+
+```{r}
+
+library(ggplot2)
+
+
+# Assuming 'dataset_Demand' contains the filtered data
+# Assuming your dataset is named 'dataset_Demand'
+dataset_Demand <- data[data$EU == "1" & data$Subcategory == "Demand", ]
+
+
+# Convert Date column to a proper date format
+dataset_Demand$Date <- as.Date(dataset_Demand$Date)
+
+# Now 'dataset_Demand' does not contain rows with NA values in the "Area" column
+dataset_Demand <- dataset_Demand[complete.cases(dataset_Demand$Area), ]
+
+
+
+# Plotting monthly demand for each country over time
+ggplot(dataset_Demand, aes(x = Date, y = Value, color = Area)) +
+  geom_line() +
+  labs(title = "Monthly Demand for Each Country Over Time", x = "Date", y = "Demand") +
+  theme_minimal()
+
+
+
+#library(forecast)
+
+# Plotting multiple time series with different colors for each country
+#autoplot(time_series_data[[1]]) + 
+#  lapply(2:length(time_series_data), function(i) autolayer(time_series_data[[i]], series = names(time_series_data)[i])) +
+#  ylab("Demand") + xlab("Date") +
+#  ggtitle("Time Series for Different European Countries")
+
+
+```
+
+**Autocorrelation Analysis:** To understand the temporal dependencies within the data, an autocorrelation function (ACF) was computed and visualized. The ACF plot provides insights into the correlation between the demand values at different lags. This can help identify potential patterns or trends within the time series.
+
+**Time Series Visualization:** The time series data was visualized using the autoplot function. The plot provides a clear representation of the demand trend over time, allowing for a visual inspection of any apparent patterns or anomalies.
+
+**Analysis**: In the most of the countries, we can observe a peak at lag = 12 and lag=1 in the autocorrelation function (ACF) plot, it suggests a potential first-order autocorrelation and potential seasonality in our time series data. In time series analysis, a lag of 12 indicates a yearly or annual pattern, which is common in data that exhibit seasonality over a 12-month period. The slow decrease in the ACF as the lags increase is due to the trend, while the "scalloped" shape is due to the seasonality.
+
+```{r}
+##### check some analysis here
+# Assuming 'dataset_Demand' contains the filtered data
+
+# Convert Date column to a proper date format
+dataset_Demand$Date <- as.Date(dataset_Demand$Date)
+
+# Get unique countries in Europe from your dataset
+european_countries <- unique(dataset_Demand$Area)
+
+# Loop through each European country and create plots
+for (country in european_countries) {
+  # Subset the data for the current country
+  ts_data <- ts(dataset_Demand[dataset_Demand$Area == country, "Value"])
+
+  # Plot the autocorrelation using the acf function
+  acf(ts_data, main = paste("Autocorrelation for", country))
+
+  # Plot the time series
+  plot(ts_data, main = paste("Time Series for", country), xlab = "Date", ylab = "Demand")
+}
+
+```
+
+At 2809 TWh, the EU represents 10% of global electricity demand. Germany has the highest electricity demand (556 TWh), accounting for almost 20% of total EU demand. 
+
+Germany is followed by France (484 TWh), Italy (322 TWh) and Spain (265 TWh). The Nordic countries of Finland (15 MWh) and Sweden (13 MWh) have the highest demand per capita, while Romania (3 MWh) has the lowest.
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(forecast)
+library(base)
+# Create time series for each country
+unique_countries <- unique(dataset_Demand$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- dataset_Demand %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+}
+
+
+```
+
+## Change in 2022
+
+The EU accounts for 10% of global electricity demand, with Germany leading with 556 TWh, nearly 20% of the total. France, Italy, and Spain follow as major contributors. The Nordic countries, Finland, and Sweden have the highest demand per capita, while Romania has the lowest.
+
+From October 2022, EU electricity demand saw significant year-on-year declines, dropping by 8.5% in Q4 2022 compared to the same period in 2021. This was mainly due to mild weather and demand reduction measures in response to high electricity prices. Overall, EU demand fell by 2.7% in 2022, from 2888 TWh in 2021 to 2809 TWh. France recorded the largest absolute reduction, and Slovakia saw the largest relative decrease.
+
+While most EU countries experienced falling or stagnant demand in 2022, Malta, Cyprus, Ireland, and Portugal were exceptions, with demand growing between 3% and 6%.
+
+```{r}
+# Assuming 'Date', 'Country', and 'Demand' are your column names
+# Convert 'Date' to a proper date format
+dataset_Demand$Date <- ymd(dataset_Demand$Date)
+
+# Create time series for each country
+unique_countries <- unique(dataset_Demand$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- dataset_Demand %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+}
+
+```
+
+A seasonal plot allows the underlying seasonal pattern to be seen more clearly, and is especially useful in identifying years in which the pattern changes. As depicted in the seasonal plots, the demand exhibits a distinct seasonal pattern, with higher consumption during colder months, particularly in winter and fall. This aligns with the typical trend observed in many regions, where heating requirements contribute to increased electricity usage. However, it's noteworthy that in warmer countries such as Italy, the seasonal pattern diverges from the norm. Instead of a significant drop in demand during summer, as seen in colder climates, Italy experiences a more stable demand throughout the year. This deviation is likely attributed to the increased demand for electricity driven by cooling needs during hot summer months, emphasizing the influence of climate on electricity consumption patterns.
+
+```{r}
+library(forecast)
+#### check the pattern of seasonality here and the amout of consumoption ##yearly
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggseasonplot(time_series_data[[country]], polar = TRUE) +
+    ylab("Demand") +
+    ggtitle(paste("Polar seasonal plot:", country)))
+}
+```
+
+## Long-term trend
+
+Until the Covid-19 pandemic, EU electricity consumption remained relatively stable since 2010, rebounding from the financial crisis. In 2020, the pandemic caused a significant drop, comparable to the financial crisis, with a 110 TWh decline in power usage. By 2022, demand was 2% lower than the Paris Agreement levels in 2015.
+
+Across the EU, electricity demand per capita has shown little change over the past two decades, hovering around 6.3 MWh in 2022. However, this varies at the country level, with Eastern European countries experiencing moderate increases and some Western European countries witnessing a decline.
+
+Anticipated electrification across sectors may drive an increase in EU electricity demand this decade, potentially accelerated by the ongoing energy crisis. Despite these projections, demand savings have kept pace with increases, leaving room for efficiency improvements across the region.
+
+```{r}
+
+library(forecast)
+
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggseasonplot(time_series_data[[country]], year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Demand") +
+  ggtitle("Seasonal plot:",country))
+}
+
+```
+
+The horizontal lines indicate the means for each month. This form of plot enables the underlying seasonal pattern to be seen clearly, and also shows the changes in seasonality over time. It is especially useful in identifying changes within particular seasons.
+
+```{r}
+library(forecast)
+
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggsubseriesplot(time_series_data[[country]], year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Demand") +
+  ggtitle("Seasonal plot: Demand",country))
+}
+
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+
+# Assuming 'dataset_Demand' contains the filtered data
+
+# Perform k-means clustering based on the 'Value' column
+k <- 4 # Set the number of clusters
+clustering_data <- kmeans(dataset_Demand$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+dataset_Demand$Cluster <- as.factor(clustering_data$cluster[match(dataset_Demand$Area, dataset_Demand$Area)])
+
+# Find the data point with the maximum 'Value' in each cluster
+representative_data <- dataset_Demand %>%
+  group_by(Cluster, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+# Plotting monthly demand for each country over time with clusters and labels
+ggplot(representative_data, aes(x = Date, y = mean_value, color = Cluster, label = Cluster)) +
+  geom_line() +
+  labs(title = "Monthly Electricity Demand", x = "Date", y = "Demand",
+       color = "Cluster") +  # Adjust legend title
+  theme_minimal() +
+  theme(legend.position = "top") +
+  scale_color_discrete(name = "Cluster", labels = c("Cluster 1:ITA, ESP", "Cluster 2: FRA, DEU", "Cluster 3: BEL, FIN, NLD, POL, SWE", "Cluster 4: oth"))
+
+```
+
+The STL decomposition offers valuable insights into the seasonal and trend patterns of electricity demand for each country. Analyzing these components can aid in understanding the factors influencing demand fluctuations over time.
+
+```{r}
+library(ggplot2)
+
+# Assuming 'your_dataset' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Convert 'Date' to Date format if it's not already in that format
+# Add the cluster assignments to the original dataset
+dataset_Demand$Date <- as.Date(dataset_Demand$Date)
+
+# Get unique countries in your dataset
+unique_countries <- unique(dataset_Demand$Area)
+
+# Loop through each country and perform STL decomposition
+for (country in unique_countries) {
+  # Subset the data for the current country
+  country_data <- dataset_Demand[dataset_Demand$Area == country, ]
+
+  # Create a time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+
+  # Apply STL decomposition
+  stl_result <- stl(ts_data, s.window = "periodic")
+
+  # Plot the decomposed components
+  plot(stl_result, main = paste("STL Decomposition -", country))
+}
+
+```
+
+The application of Moving Average proves valuable in revealing the underlying trends in electricity demand for each country. This technique aids in understanding the overall trajectory of demand, especially when faced with noisy or fluctuating data.
+
+```{r}
+library(forecast)
+
+# Assuming 'dataset_Demand' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Convert 'Date' to Date format if it's not already in that format
+dataset_Demand$Date <- as.Date(dataset_Demand$Date)
+
+# Get unique countries in the dataset
+unique_countries <- unique(dataset_Demand$Area)
+
+
+# Loop through each country and apply Moving Average
+for (country in unique_countries) {
+  # Subset the data for the specific country
+  country_data <- dataset_Demand[dataset_Demand$Area == country, ]
+  
+  # Create a time series object
+  ts_data <- ts(country_data$Value, 
+                start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), 
+                frequency = 12)
+  
+  # Apply Moving Average (MA) with a window of your choice (e.g., 12 for monthly data)
+  ma_result <- ma(ts_data, order = 12)
+  
+  # Plot the original time series and the MA result
+  plot(ts_data, main = paste("Original Time Series vs. Moving Average for", country),
+       sub = "Moving Average (MA) with a window of 12 months", col = "black")
+  lines(ma_result, col = "red")
+  legend("topright", legend = c("Original", "Moving Average"), col = c("black", "red"), lty = 1:1)
+}
+
+```
+
+```{r}
+library(seasonal)
+
+# Assuming 'time_series_data' is a list containing time series data for different countries
+
+# Perform X11 decomposition for Austria
+time_series_data$Austria %>% seas(x11="") -> fit
+# Plot the X11 decomposition
+autoplot(fit) +
+  ggtitle("X11 Decomposition of Your Dataset - Austria") +
+  xlab("Monthly Demand") +
+  ylab("Year")
+
+# Plot the time series components with labels adjusted to your dataset
+autoplot(time_series_data$Austria, series="Data") +
+  autolayer(trendcycle(fit), series="Trend") +
+  autolayer(seasadj(fit), series="Seasonally Adjusted") +
+  xlab("Year") +
+  ylab("Monthly Demand") +
+  ggtitle("Your Dataset Title - Austria") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+
+
+```
+
+```{r}
+library(ggplot2)
+
+# Assuming 'your_dataset' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Convert 'Date' to Date format if it's not already in that format
+# Add the cluster assignments to the original dataset
+dataset_Demand$Date <- as.Date(dataset_Demand$Date)
+
+# Get unique countries in your dataset
+unique_countries <- unique(dataset_Demand$Area)
+
+
+for (country in european_countries) {
+  
+    # Subset the data for the current country
+  country_data <- dataset_Demand[dataset_Demand$Area == country, ]
+
+  # Create a time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+
+  # Apply STL decomposition
+  stl_result <- stl(ts_data, s.window = "periodic")
+  
+    # Plot the time series components with labels adjusted to your dataset
+  print(autoplot(ts_data , series="Data") +
+    autolayer(trendcycle(stl_result), series="Trend") +
+    autolayer(seasadj(stl_result), series="Seasonally Adjusted") +
+    xlab("Year") +
+    ylab("Monthly Electricity Demand") +
+    ggtitle(paste("Your Dataset Title -", country)) +
+    scale_colour_manual(values=c("gray","blue","red"),
+               breaks=c("Data","Seasonally Adjusted","Trend")))
+  
+
+
+}
+
+```
+
+```{r}
+fit <- stl(time_series_data$Austria, t.window=13, s.window="periodic",
+  robust=TRUE)
+fit %>% seasadj() %>% naive() %>%
+  autoplot() + ylab("Monthly Electricity Demand") +
+  ggtitle("Naive forecasts of seasonally adjusted data")
+
+
+```
+
+```{r}
+fit %>% forecast(method="naive") %>%
+  autoplot() + ylab("Monthly Electricity Demand")
+
+```
+
+```{r}
+
+# Find the data point with the maximum 'Value' in each cluster
+representative_data <- dataset_Demand %>%
+  group_by(Cluster, Date) %>%
+  mutate(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+Cluster1Dataset <- representative_data %>%
+  filter(Cluster == 1)
+
+Cluster2Dataset <- representative_data %>%
+  filter(Cluster == 2)
+
+Cluster3Dataset <- representative_data %>%
+  filter(Cluster == 3)
+
+Cluster4Dataset <- representative_data %>%
+  filter(Cluster == 4)
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value , start = c(year(min(Cluster1Dataset$Date)), month(min(Cluster1Dataset$Date))),
+                end = c(year(max(Cluster1Dataset$Date)), month(max(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$mean_value , start = c(year(min(Cluster2Dataset$Date)), month(min(Cluster2Dataset$Date))),
+                end = c(year(max(Cluster2Dataset$Date)), month(max(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$mean_value , start = c(year(min(Cluster3Dataset$Date)), month(min(Cluster3Dataset$Date))),
+                end = c(year(max(Cluster3Dataset$Date)), month(max(Cluster3Dataset$Date))), frequency = 12)
+
+
+ts_data4 <- ts(Cluster4Dataset$mean_value , start = c(year(min(Cluster4Dataset$Date)), month(min(Cluster4Dataset$Date))),
+                end = c(year(max(Cluster4Dataset$Date)), month(max(Cluster4Dataset$Date))), frequency = 12)
+
+
+```
+
+The aim of this analysis is to apply Seasonal Exponential Smoothing (SES) models to the differenced and logged monthly electricity demand data for four distinct countries. The purpose is to forecast future demand trends and understand the impact of the chosen smoothing parameters.
+
+```{r}
+
+
+
+diff1<- diff(diff(log(ts_data1), lag=12),lag=1)
+diff2<- diff(diff(log(ts_data2), lag=12),lag=1)
+diff3<- diff(diff(log(ts_data3), lag=12),lag=1)
+diff4<- diff(diff(log(ts_data4), lag=12),lag=1)
+
+
+
+fit1<- ses(diff1,alpha=0.6, h=5)
+fit2<- ses(diff2,alpha = 0.8, h=5)
+fit3<- ses(diff3,alpha = 0.8, h=5)
+fit4<- ses(diff4,alpha = 0.8, h=5)
+
+
+plot(diff1, ylab="Monthly Electricity Demand", xlab="Year")
+lines(fitted(fit1), col="blue", type="o")
+
+plot(diff2, ylab="Monthly Electricity Demand", xlab="Year")
+lines(fitted(fit2), col="blue", type="o")
+
+plot(diff3, ylab="Monthly Electricity Demand", xlab="Year")
+lines(fitted(fit3), col="blue", type="o")
+
+plot(diff4, ylab="Monthly Electricity Demand", xlab="Year")
+lines(fitted(fit4), col="blue", type="o")
+
+summary(fit1)
+
+```
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+checkresiduals(fit3)
+checkresiduals(fit4)
+```
+
+This analysis involves fitting Time Series Linear Models (tslm) to the electricity demand data for four different countries. The primary aim is to capture trends and seasonality in the data, providing a basis for forecasting.
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- tslm(ts_data1 ~ trend + season)
+model2 <- tslm(ts_data2 ~ trend + season)
+model3 <- tslm(ts_data3 ~ trend + season)
+model4 <- tslm(ts_data4 ~ trend + season)
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model4), col="blue")
+
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+
+```
+
+ARIMA models offer a flexible approach to modeling time series data, capturing both autoregressive and moving average components. The fitted models provide a basis for forecasting electricity demand, aiding in decision-making and resource planning.
+
+```{r}
+
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- auto.arima(ts_data1)
+model2 <- auto.arima(ts_data2)
+model3 <- auto.arima(ts_data3)
+model4 <- auto.arima(ts_data4)
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Electricity Demand")
+lines(fitted(model4), col="blue")
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+```
+
+Holt's method and Damped Holt's method provide valuable tools for forecasting electricity demand, allowing for different levels of trend damping. The forecasts can guide decision-making processes, resource allocation, and strategic planning.
+
+```{r}
+fc1<- holt(diff1, h=15)
+fc1_2<- holt(diff1, damped=T, phi=0.9, h=15)
+
+fc2 <- holt(diff2, h=15)
+fc2_2<- holt(diff2, damped=T, phi=0.9, h=15)
+
+fc3<- holt(diff3, h=15)
+fc3_2<- holt(diff3, damped=T, phi=0.9, h=15)
+
+fc4<- holt(diff4, h=15)
+fc4_2<- holt(diff4, damped=T, phi=0.9, h=15)
+
+autoplot(diff1)+
+autolayer(fc1, series="Holt's method", PI=F)+
+autolayer(fc1_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff2)+
+autolayer(fc2, series="Holt's method", PI=F)+
+autolayer(fc2_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff3)+
+autolayer(fc3, series="Holt's method", PI=F)+
+autolayer(fc3_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff4)+
+autolayer(fc4, series="Holt's method", PI=F)+
+autolayer(fc4_2, series="Damped Holt's method", PI=F)
+
+
+```
+
+```{r}
+checkresiduals(fc1)
+checkresiduals(fc2)
+checkresiduals(fc3)
+checkresiduals(fc4)
+```
+
+```{r}
+
+MED1<- window(ts_data1, start=2015)
+fit11<- hw(MED1, seasonal="additive")
+fit12<- hw(MED1, seasonal="multiplicative")
+
+MED2<- window(ts_data2, start=2015)
+fit21<- hw(MED2, seasonal="additive")
+fit22<- hw(MED2, seasonal="multiplicative")
+
+MED3<- window(ts_data3, start=2015)
+fit31<- hw(MED3, seasonal="additive")
+fit32<- hw(MED3, seasonal="multiplicative")
+
+MED4<- window(ts_data4, start=2015)
+fit41<- hw(MED4, seasonal="additive")
+fit42<- hw(MED4, seasonal="multiplicative")
+
+autoplot(MED1)+
+autolayer(fit11, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit12, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MED2)+
+autolayer(fit21, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit22, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MED3)+
+autolayer(fit31, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit32, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MED4)+
+autolayer(fit41, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit42, series="Holt-Winters' method(multiplicative)", PI=F)
+
+
+```
+
+```{r}
+checkresiduals(fit11)
+checkresiduals(fit21)
+checkresiduals(fit31)
+checkresiduals(fit41)
+```
+
+```{r}
+checkresiduals(fit12)
+checkresiduals(fit22)
+checkresiduals(fit32)
+checkresiduals(fit42)
+```
+
+# EU electricity generation
+
+The EU, an early adopter of renewable energy, is striving to achieve a 45% renewable energy target by 2030, aiming for 69% of its electricity to be generated from renewables. Currently, fossil fuels still account for a significant portion, with 39% (1,104 TWh) of electricity coming from coal, gas, and other fossil sources. Coal contributes 16% (447 TWh), gas 20% (557 TWh), and other fossil fuels 3.6% (100 TWh). Nuclear remains the largest single contributor at 22% (613 TWh), while wind (15%, 420 TWh) and solar (7.3%, 203 TWh) together surpass all other sources, totaling 22% (623 TWh). Hydro contributes 10% (283 TWh), bioenergy 6% (167 TWh), and other renewables 0.2% (6.7 TWh).
+
+## Europe's electricity transition emerges from the energy crisis stronger than ever
+
+Europe's political response to Russia's invasion of Ukraine in 2022 was to accelerate its electricity transition. There is now a focus on rapidly cutting gas demand---at the same time as phasing out coal. This means a massive scale-up in clean energy is on its way. In 2022, wind and solar generated a record fifth of EU electricity (22%), for the first time overtaking fossil gas (20%), and remaining above coal power (16%).
+
+a visual representation of how monthly demand varies over time for different countries.
+
+```{r}
+library(ggplot2)
+
+library(dplyr)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Variable == "Renewables" & Category == "Electricity generation" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+RenewDataset <- RenewDataset[complete.cases(RenewDataset$Area), ]
+
+# Now 'your_dataset' does not contain rows with NA values in the "Area" column
+
+
+# Create time series for each country
+unique_countries <- unique(RenewDataset$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- RenewDataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+}
+
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+
+
+
+# Plotting monthly demand for each country over time
+ggplot(RenewDataset, aes(x = Date, y = Value, color = Area)) +
+  geom_line() +
+  labs(title = "Monthly Renewable Electericity Generation for Each Country Over Time", x = "Date", y = "Renewable") +
+  theme_minimal()
+
+
+
+```
+
+## Change in 2022
+
+In 2022, significant changes in EU electricity generation were driven by substantial declines in hydro and nuclear generation. Prolonged heat waves led to a 19% decrease in hydro generation, while outages and maintenance of French plants and German nuclear closures reduced nuclear output by 16%. As a result, nuclear generation reached its lowest share in 40 years at 22%. Despite lower electricity demand, fossil generation increased, with coal up 6.7% and gas up 0.8%. Wind and solar generation continued to grow, reaching a combined market share of 22%. Other fossil power, renewables, and bioenergy remained stable.
+
+a visual representation of how monthly demand varies over time for different types of energies.
+
+```{r}
+
+library(ggplot2)
+
+library(dplyr)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Subcategory == "Fuel" & Category == "Electricity generation" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+#RenewDataset <- RenewDataset[complete.cases(RenewDataset$Fuel), ]
+
+
+# Create time series for each country
+listOfFuels <- unique(RenewDataset$Variable)
+time_series_data <- list()
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+# Group by Variable and Date and calculate the mean Value
+result <- RenewDataset %>%
+  group_by(Variable, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+for (var in listOfFuels) {
+  fuel_data <- RenewDataset %>% filter(Variable == var) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(fuel_data$Value, start = c(year(min(fuel_data$Date)), month(min(fuel_data$Date))),
+                end = c(year(max(fuel_data$Date)), month(max(fuel_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[var]] <- ts_data
+}
+
+
+
+
+# Plotting monthly demand for each country over time with clusters
+ ggplot(result, aes(x = Date, y = mean_value, color = Variable)) +
+  geom_line() +
+  labs(title = "Monthly Fuels Electricity Generation", x = "Date", y = "Demand") +
+  theme_minimal()
+  
+
+```
+
+## Long-term trend
+
+The long-term trend in EU electricity generation reveals a significant shift marked by the growth of wind and solar generation and a reduction in coal usage. Wind and solar generation increased from 13% in 2015 to 22% in 2022, transforming the energy landscape. In contrast, coal generation, which accounted for 30% in 2000, has decreased to 16% in 2022. Despite this decline in coal, fossil gas has increased from 13% in 2000 to 20% in 2022. However, fossil generation as a whole has substantially decreased, with clean sources now generating 61% of the EU's electricity, compared to 48% in 2000.
+
+```{r}
+
+
+library(ggplot2)
+
+library(dplyr)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Subcategory == "Aggregate fuel" & Category == "Electricity generation" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+#RenewDataset <- RenewDataset[complete.cases(RenewDataset$Fuel), ]
+
+
+# Create time series for each country
+listOfFuels <- unique(RenewDataset$Variable)
+time_series_data <- list()
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+# Group by Variable and Date and calculate the mean Value
+result <- RenewDataset %>%
+  group_by(Variable, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+for (var in listOfFuels) {
+  fuel_data <- RenewDataset %>% filter(Variable == var) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(fuel_data$Value, start = c(year(min(fuel_data$Date)), month(min(fuel_data$Date))),
+                end = c(year(max(fuel_data$Date)), month(max(fuel_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[var]] <- ts_data
+}
+
+
+
+
+# Plotting monthly demand for each country over time with clusters
+ ggplot(result, aes(x = Date, y = mean_value, color = Variable)) +
+  geom_line() +
+  labs(title = "Monthly Fuels Electricity Generation", x = "Date", y = "Demand") +
+  theme_minimal()
+  
+
+```
+
+```{r}
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+
+
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Subcategory == "Fuel" & Category == "Electricity generation" & EU == "1")%>%
+  group_by(Variable, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+Cluster1Dataset <- your_dataset %>%
+  filter(Variable == "Bioenergy")
+
+Cluster2Dataset <- your_dataset %>%
+  filter(Variable == "Coal")
+
+Cluster3Dataset <- your_dataset %>%
+  filter(Variable == "Gas")
+
+Cluster4Dataset <- your_dataset %>%
+  filter(Variable == "Hydro")
+
+Cluster5Dataset <- your_dataset %>%
+  filter(Variable == "Nuclear")
+
+Cluster6Dataset <- your_dataset %>%
+  filter(Variable == "Wind")
+
+Cluster7Dataset <- your_dataset %>%
+  filter(Variable == "Solar")
+
+Cluster8Dataset <- your_dataset %>%
+  filter(Variable == "Other Fossil")
+
+
+
+ts_data1 <- ts(Cluster1Dataset$mean_value, start =c(2015, month(min(Cluster1Dataset$Date))),
+                end = c(year(max(Cluster1Dataset$Date)), month(max(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$mean_value, start = c(2015, month(min(Cluster2Dataset$Date))),
+                end = c(year(max(Cluster2Dataset$Date)), month(max(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$mean_value, start = c(2015, month(min(Cluster3Dataset$Date))),
+                end = c(year(max(Cluster3Dataset$Date)), month(max(Cluster3Dataset$Date))), frequency = 12)
+
+
+ts_data4 <- ts(Cluster4Dataset$mean_value, start = c(2015, month(min(Cluster4Dataset$Date))),
+                end = c(year(max(Cluster4Dataset$Date)), month(max(Cluster4Dataset$Date))), frequency = 12)
+
+ts_data5 <- ts(Cluster5Dataset$mean_value, start = c(2015, month(min(Cluster5Dataset$Date))),
+                end = c(year(max(Cluster5Dataset$Date)), month(max(Cluster5Dataset$Date))), frequency = 12)
+
+ts_data6 <- ts(Cluster6Dataset$mean_value, start = c(2015, month(min(Cluster6Dataset$Date))),
+                end = c(year(max(Cluster6Dataset$Date)), month(max(Cluster6Dataset$Date))), frequency = 12)
+
+ts_data7 <- ts(Cluster7Dataset$mean_value, start = c(2015, month(min(Cluster7Dataset$Date))),
+                end = c(year(max(Cluster7Dataset$Date)), month(max(Cluster7Dataset$Date))), frequency = 12)
+
+ts_data8 <- ts(Cluster8Dataset$mean_value, start = c(2015, month(min(Cluster8Dataset$Date))),
+                end = c(year(max(Cluster8Dataset$Date)), month(max(Cluster8Dataset$Date))), frequency = 12)
+
+
+```
+
+## Data on EU electricity sources
+
+Europe's coal power is experiencing a notable decline, evident in the consistent reduction in coal generation over the last four months of 2022. The 6% drop, equivalent to 9.6 TWh, from September to December compared to the same period in 2021, is primarily attributed to a decrease in electricity demand. The reintroduction of 26 coal units as emergency standby had limited impact, running at just 18% average utilization in Q4 2022, with nine units providing no generation. Despite importing additional coal, two-thirds of the surplus remained unused. Importantly, countries remain steadfast in their commitment to phasing out coal.
+
+Solar generation experienced a remarkable surge, rising by a record 39 TWh (24%) in 2022, leading to substantial cost savings of €10 billion in gas expenses. This surge was fueled by record installations of 41 GW during the year, a 47% increase from the previous year. Twenty EU countries achieved their highest-ever share of solar electricity, with the Netherlands surpassing coal generation by producing 14% of its power from solar. Greece achieved a notable milestone, running solely on renewables for five hours in October, and is anticipated to reach its 2030 solar capacity target of 8 GW by the end of 2023, seven years ahead of schedule. In 2022, wind and solar collectively contributed over a fifth (22%) of EU electricity.
+
+Conversely, fossil generation experienced a 3% increase in 2022, but forecasts suggest a substantial decline in 2023. Factors contributing to this decline include the anticipated return of many of EDF's French nuclear plants, increased solar and wind generation, normalized hydro stocks, and a continued decrease in electricity demand. Ember estimates a potential 20% plunge in fossil generation in 2023, double the previous record from 2020. While coal generation is expected to decline, gas generation is projected to experience the most significant drop, as it is anticipated to remain more expensive than coal until at least 2025. This shift is expected to contribute to a rapid decline in gas demand in the power sector, bringing stability to European gas markets as the region adapts to reduced reliance on Russian gas.
+
+```{r}
+library(readxl)
+library(lmtest) 
+library(forecast)
+library(DIMORA)
+library(fpp2)
+library(zoo)
+library(base)
+library(dplyr)
+library(outliers)
+
+```
+
+```{r}
+plot(ts_data1, type="l")
+plot(ts_data2, type="l")
+plot(ts_data3, type="l")
+plot(ts_data4, type="l")
+plot(ts_data5, type="l")
+plot(ts_data6, type="l")
+plot(ts_data7, type="l")
+plot(ts_data8, type="l")
+
+
+plot(ts_data3, type="b")
+plot(cumsum(ts_data3), type="b")
+bm_Renew<-BM(ts_data1 ,display = T)
+```
+
+```{r}
+###prediction (out-of-sample)
+GBMe1tw<- GBM(ts_data1,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data1, display=FALSE)$Estimate[1,1],BM(ts_data1, display=FALSE)$Estimate[2,1],BM(ts_data1, display=FALSE)$Estimate[3,1], 30,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data2,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data2, display=FALSE)$Estimate[1,1],BM(ts_data2, display=FALSE)$Estimate[2,1],BM(ts_data2, display=FALSE)$Estimate[3,1], 40,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data3,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data3, display=FALSE)$Estimate[1,1],BM(ts_data3, display=FALSE)$Estimate[2,1],BM(ts_data3, display=FALSE)$Estimate[3,1], 40,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data4,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data4, display=FALSE)$Estimate[1,1],BM(ts_data4, display=FALSE)$Estimate[2,1],BM(ts_data4, display=FALSE)$Estimate[3,1],40,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data5,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data5, display=FALSE)$Estimate[1,1],BM(ts_data5, display=FALSE)$Estimate[2,1],BM(ts_data5, display=FALSE)$Estimate[3,1],40,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data6,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data6, display=FALSE)$Estimate[1,1],BM(ts_data6, display=FALSE)$Estimate[2,1],BM(ts_data6, display=FALSE)$Estimate[3,1],40,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data7,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data7, display=FALSE)$Estimate[1,1],BM(ts_data7, display=FALSE)$Estimate[2,1],BM(ts_data7, display=FALSE)$Estimate[3,1], 30,0.1,0.1))
+
+GBMe1tw<- GBM(ts_data8,shock = "exp",nshock = 1,prelimestimates = c(BM(ts_data8, display=FALSE)$Estimate[1,1],BM(ts_data8, display=FALSE)$Estimate[2,1],BM(ts_data8, display=FALSE)$Estimate[3,1], 30,0.1,0.1))
+
+
+GGM(ts_data1, prelimestimates = NULL, mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data2, prelimestimates = NULL, mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data3, prelimestimates=c(mean(ts_data3), 0.001, 0.01, 1.923560e-03, 9.142022e-02), mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data4, prelimestimates = NULL, mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data5, prelimestimates = NULL, mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data6, prelimestimates = c(mean(ts_data6), 0.001, 0.01, 0.001, 0.1), mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data7, prelimestimates=NULL, mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+GGM(ts_data8, prelimestimates=c(BM(ts_data8, display=FALSE)$Estimate[1,1],BM(ts_data8, display=FALSE)$Estimate[2,1],BM(ts_data8, display=FALSE)$Estimate[3,1], 1.523560e-02, 5.142022e-01), mt = 'base', alpha = 0.05,
+    oos = round(length(ts_data1) * 0.25), display = TRUE)
+
+
+
+
+```
+
+```{r}
+UCRCD(ts_data2, ts_data3, display=T, alpha=0.05,
+          delta=0.01, gamma=0.01, par="double",
+          m1  = BM(ts_data2,display = F)$Estimate[1,1],
+          m2  = BM(ts_data3,display = F)$Estimate[1,1],
+          p1c = BM(ts_data2,display = F)$Estimate[2,1],
+          q1c = BM(ts_data3,display = F)$Estimate[3,1],
+          p2  = BM(ts_data2,display = F)$Estimate[2,1],
+          q2  = BM(ts_data3,display = F)$Estimate[3,1])
+```
+
+We decided to limit our analysis to 27 countries in EU: Austria, Belgium, Bulgaria, Croatia, Republic of Cyprus, Czech Republic, Denmark, Estonia, Finland, France, Germany, Greece, Hungary, Ireland, Italy, Latvia, Lithuania, Luxembourg, Malta, Netherlands, Poland, Portugal, Romania, Slovakia, Slovenia, Spain and Sweden during the period from 2000 until 2022 years.
+
+# EU power sector emissions
+
+The COVID-19 pandemic had a dramatic impacton energy markets, with both primary energy and carbon emissions falling at their fastest rates since the Second World War. Nevertheless, renewable energy continued to grow, with solar power recording its largest ever increase.
+
+The EU ranks fourth globally in power sector CO2 emissions, contributing 5.7% (712 million tonnes) of the world total in 2022. Germany leads EU emissions with 230 million tonnes, , followed by Poland, Italy, and Spain. while Poland has the highest carbon intensity at 692 gCO2/kWh due to coal reliance. The EU's average carbon intensity is 255 gCO2/kWh, emphasizing the need for targeted clean energy strategies.
+
+```{r}
+library(ggplot2)
+#Power sector emissions
+#Total
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Total" & EU == "1")
+
+
+# Assuming 'dataset_Demand' contains the filtered data
+
+# Perform k-means clustering based on the 'Value' column
+k <- 4  # Set the number of clusters
+clustering_data <- kmeans(your_dataset$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+your_dataset$Cluster <- as.factor(clustering_data$cluster[match(your_dataset$Area, your_dataset$Area)])
+
+# Convert Date column to a proper date format
+your_dataset$Date <- as.Date(your_dataset$Date)
+
+
+# Plotting monthly demand for each country over time
+ggplot(your_dataset, aes(x = Date, y = Value, color = Area)) +
+  geom_line() +
+  labs(title = "Monthly Power sector emissions for Each Country Over Time", x = "Date", y = "Power sector emissions") +
+  theme_minimal()
+```
+
+```{r}
+
+library(ggplot2)
+
+library(dplyr)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Aggregate fuel" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+#RenewDataset <- RenewDataset[complete.cases(RenewDataset$Fuel), ]
+
+
+# Create time series for each country
+listOfFuels <- unique(RenewDataset$Variable)
+time_series_data <- list()
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+# Group by Variable and Date and calculate the mean Value
+result <- RenewDataset %>%
+  group_by(Variable, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+for (var in listOfFuels) {
+  fuel_data <- RenewDataset %>% filter(Variable == var) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(fuel_data$Value, start = c(year(min(fuel_data$Date)), month(min(fuel_data$Date))),
+                end = c(year(max(fuel_data$Date)), month(max(fuel_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[var]] <- ts_data
+}
+
+
+
+
+# Plotting monthly demand for each country over time with clusters
+ ggplot(result, aes(x = Date, y = mean_value, color = Variable)) +
+  geom_line() +
+  labs(title = "Monthly Power sector emissions", x = "Date", y = "Power sector emissions") +
+  theme_minimal()
+  
+
+```
+
+```{r}
+
+library(ggplot2)
+
+library(dplyr)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Fuel" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+#RenewDataset <- RenewDataset[complete.cases(RenewDataset$Fuel), ]
+
+
+# Create time series for each country
+listOfFuels <- unique(RenewDataset$Variable)
+time_series_data <- list()
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+# Group by Variable and Date and calculate the mean Value
+result <- RenewDataset %>%
+  group_by(Variable, Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+for (var in listOfFuels) {
+  fuel_data <- RenewDataset %>% filter(Variable == var) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(fuel_data$Value, start = c(year(min(fuel_data$Date)), month(min(fuel_data$Date))),
+                end = c(year(max(fuel_data$Date)), month(max(fuel_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[var]] <- ts_data
+}
+
+
+
+
+# Plotting monthly demand for each country over time with clusters
+ ggplot(result, aes(x = Date, y = mean_value, color = Variable)) +
+  geom_line() +
+  labs(title = "Power sector emissions", x = "Date", y = "CO2 emissions") +
+  theme_minimal()
+  
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Total" & EU == "1")
+
+# Perform k-means clustering based on the 'Value' column
+k <- 4  # Set the number of clusters
+clustering_data <- kmeans(your_dataset$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+your_dataset$Cluster <- as.factor(clustering_data$cluster[match(your_dataset$Area, your_dataset$Area)])
+
+# Convert Date column to a proper date format
+your_dataset$Date <- as.Date(your_dataset$Date)
+
+# Calculate the average Value for each Cluster and Date
+your_dataset <- your_dataset %>%
+  group_by(Cluster, Date) %>%
+  mutate(Avg_Value = mean(Value, na.rm = TRUE))
+
+# Plotting monthly demand for each cluster over time
+ggplot(your_dataset, aes(x = Date, y = Avg_Value, color = factor(Cluster))) +
+  geom_line() +
+  labs(title = "Monthly Average Power sector emissions for Each Cluster Over Time", x = "Date", y = "Average Power sector emissions") +
+  theme_minimal()
+
+```
+
+```{r}
+# Assuming 'ts_data' is your time series object
+cluster <- unique(your_dataset$Area[your_dataset$Cluster == 1])
+
+# Print the model summary
+cluster
+```
+
+```{r}
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & EU == "1")
+
+Cluster1Dataset <- your_dataset %>%
+  filter(Variable == "Clean")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+Cluster2Dataset <- your_dataset %>%
+  filter(Variable == "Fossil")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+
+Cluster3Dataset <- your_dataset %>%
+  filter(Variable == "Gas and Other Fossil")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+Cluster4Dataset <- your_dataset %>%
+  filter(Variable == "Hydro, Bioenergy and Other Renewables")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+Cluster5Dataset <- your_dataset %>%
+  filter(Variable == "Renewables")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+Cluster6Dataset <- your_dataset %>%
+  filter(Variable == "Wind and Solar")%>%
+  group_by(Date) %>%
+  summarise(mean_value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+ts_data1 <- ts(Cluster1Dataset$mean_value, start = c(2015, month(min(Cluster1Dataset$Date))),
+                end = c(year(max(Cluster1Dataset$Date)), month(max(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$mean_value, start = c(2015, month(min(Cluster2Dataset$Date))),
+                end = c(year(max(Cluster2Dataset$Date)), month(max(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$mean_value, start = c(2015, month(min(Cluster3Dataset$Date))),
+                end = c(year(max(Cluster3Dataset$Date)), month(max(Cluster3Dataset$Date))), frequency = 12)
+
+
+ts_data4 <- ts(Cluster4Dataset$mean_value, start = c(2015, month(min(Cluster4Dataset$Date))),
+                end = c(year(max(Cluster4Dataset$Date)), month(max(Cluster4Dataset$Date))), frequency = 12)
+
+ts_data5 <- ts(Cluster5Dataset$mean_value, start = c(2015, month(min(Cluster5Dataset$Date))),
+                end = c(year(max(Cluster5Dataset$Date)), month(max(Cluster5Dataset$Date))), frequency = 12)
+
+ts_data6 <- ts(Cluster6Dataset$mean_value, start = c(2015, month(min(Cluster6Dataset$Date))),
+                end = c(year(max(Cluster6Dataset$Date)), month(max(Cluster6Dataset$Date))), frequency = 12)
+
+
+
+
+```
+
+```{r}
+diff1<- diff(diff(ts_data1, lag=12),lag=1)
+diff2<- diff(diff(ts_data2, lag=12),lag=1)
+diff3<- diff(diff(ts_data3, lag=12),lag=1)
+diff4<- diff(diff(ts_data4, lag=12),lag=1)
+diff5<- diff(diff(ts_data5, lag=12),lag=1)
+diff6<- diff(diff(ts_data6, lag=12),lag=1)
+
+
+fit1<- ses(ts_data1, h=5)
+fit2<- ses(ts_data2, h=5)
+fit3<- ses(ts_data3, h=5)
+fit4<- ses(ts_data4, h=5)
+fit5<- ses(ts_data5, h=5)
+fit6<- ses(ts_data6, h=5)
+
+
+
+plot(ts_data1, ylab="Power sector emissions- Clean", xlab="Year")
+lines(fitted(fit1), col="blue", type="o")
+
+plot(ts_data2, ylab="Power sector emissions- Fossil", xlab="Year")
+lines(fitted(fit2), col="blue", type="o")
+
+plot(ts_data3, ylab="Power sector emissions- Gas and Other Fossil", xlab="Year")
+lines(fitted(fit3), col="blue", type="o")
+
+plot(ts_data4, ylab="Power sector emissions- Hydro, Bioenergy and Other Renewables", xlab="Year")
+lines(fitted(fit4), col="blue", type="o")
+
+plot(ts_data5, ylab="Power sector emissions- Hydro, Bioenergy and Other Renewables", xlab="Year")
+lines(fitted(fit5), col="blue", type="o")
+
+plot(ts_data6, ylab="Power sector emissions- Wind and Solar", xlab="Year")
+lines(fitted(fit6), col="blue", type="o")
+
+
+summary(fit1)
+```
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+checkresiduals(fit3)
+checkresiduals(fit4)
+checkresiduals(fit5)
+checkresiduals(fit6)
+
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- tslm(ts_data1 ~ trend + season)
+model2 <- tslm(ts_data2 ~ trend + season)
+model3 <- tslm(ts_data3 ~ trend + season)
+model4 <- tslm(ts_data4 ~ trend + season)
+model5 <- tslm(ts_data5 ~ trend + season)
+model6 <- tslm(ts_data6 ~ trend + season)
+
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, ylab="Power sector emissions- Clean", xlab="Year")
+lines(fitted(model1), col="blue", type="o")
+
+plot(ts_data2, ylab="Power sector emissions- Fossil", xlab="Year")
+lines(fitted(model2), col="blue", type="o")
+
+plot(ts_data3, ylab="Power sector emissions- Gas and Other Fossil", xlab="Year")
+lines(fitted(model3), col="blue", type="o")
+
+plot(ts_data4, ylab="Power sector emissions- Hydro, Bioenergy and Other Renewables", xlab="Year")
+lines(fitted(model4), col="blue", type="o")
+
+plot(ts_data5, ylab="Power sector emissions- Hydro, Bioenergy and Other Renewables", xlab="Year")
+lines(fitted(model5), col="blue", type="o")
+
+plot(ts_data6, ylab="Power sector emissions- Wind and Solar", xlab="Year")
+lines(fitted(model6), col="blue", type="o")
+
+
+summary(fit1)
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+checkresiduals(model5)
+checkresiduals(model6)
+
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- auto.arima(ts_data1)
+model2 <- auto.arima(ts_data2)
+model3 <- auto.arima(ts_data3)
+model4 <- auto.arima(ts_data4)
+model5 <- auto.arima(ts_data5)
+model6 <- auto.arima(ts_data6)
+
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model4), col="blue")
+
+plot(ts_data5, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model5), col="blue")
+
+plot(ts_data6, xlab="Time", ylab="Power sector emissions")
+lines(fitted(model6), col="blue")
+
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+checkresiduals(model5)
+checkresiduals(model6)
+
+```
+
+```{r}
+
+fc1<- holt(diff1, h=15)
+fc1_2<- holt(diff1, damped=T, phi=0.9, h=15)
+
+fc2 <- holt(diff2, h=15)
+fc2_2<- holt(diff2, damped=T, phi=0.9, h=15)
+
+fc3<- holt(diff3, h=15)
+fc3_2<- holt(diff3, damped=T, phi=0.9, h=15)
+
+fc4<- holt(diff4, h=15)
+fc4_2<- holt(diff4, damped=T, phi=0.9, h=15)
+
+fc5<- holt(diff5, h=15)
+fc5_2<- holt(diff5, damped=T, phi=0.9, h=15)
+
+fc6<- holt(diff6, h=15)
+fc6_2<- holt(diff6, damped=T, phi=0.9, h=15)
+
+
+autoplot(diff1)+
+autolayer(fc1, series="Holt's method", PI=F)+
+autolayer(fc1_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff2)+
+autolayer(fc2, series="Holt's method", PI=F)+
+autolayer(fc2_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff3)+
+autolayer(fc3, series="Holt's method", PI=F)+
+autolayer(fc3_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff4)+
+autolayer(fc4, series="Holt's method", PI=F)+
+autolayer(fc4_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff5)+
+autolayer(fc5, series="Holt's method", PI=F)+
+autolayer(fc5_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff6)+
+autolayer(fc6, series="Holt's method", PI=F)+
+autolayer(fc6_2, series="Damped Holt's method", PI=F)
+
+
+
+```
+
+```{r}
+checkresiduals(fc1)
+checkresiduals(fc2)
+checkresiduals(fc3)
+checkresiduals(fc4)
+checkresiduals(fc5)
+checkresiduals(fc6)
+```
+
+```{r}
+
+checkresiduals(fc1_2)
+checkresiduals(fc2_2)
+checkresiduals(fc3_2)
+checkresiduals(fc4_2)
+checkresiduals(fc5_2)
+checkresiduals(fc6_2)
+```
+
+```{r}
+
+fit11<- hw(diff1, seasonal="additive")
+
+fit21<- hw(diff2, seasonal="additive")
+
+fit31<- hw(diff3, seasonal="additive")
+
+fit41<- hw(diff4, seasonal="additive")
+
+fit51<- hw(diff5, seasonal="additive")
+
+
+autoplot(diff1)+
+autolayer(fit11, series="Holt-Winters' method(additive)", PI=F)
+
+autoplot(diff2)+
+autolayer(fit21, series="Holt-Winters' method(additive)", PI=F)
+
+autoplot(diff3)+
+autolayer(fit31, series="Holt-Winters' method(additive)", PI=F)
+
+autoplot(diff4)+
+autolayer(fit41, series="Holt-Winters' method(additive)", PI=F)
+
+autoplot(diff5)+
+autolayer(fit51, series="Holt-Winters' method(additive)", PI=F)
+
+
+
+```
+
+```{r}
+checkresiduals(fit11)
+checkresiduals(fit21)
+checkresiduals(fit31)
+checkresiduals(fit41)
+checkresiduals(fit51)
+```
+
+```{r}
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Total" & EU == "1")
+
+
+# Assuming 'dataset_Demand' contains the filtered data
+
+# Perform k-means clustering based on the 'Value' column
+k <- 4  # Set the number of clusters
+clustering_data <- kmeans(your_dataset$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+your_dataset$Cluster <- as.factor(clustering_data$cluster[match(your_dataset$Area, your_dataset$Area)])
+
+# Convert Date column to a proper date format
+your_dataset$Date <- as.Date(your_dataset$Date)
+
+
+Cluster1Dataset <- your_dataset %>%
+  filter(Cluster == 1)
+
+Cluster2Dataset <- your_dataset %>%
+  filter(Cluster == 2)
+
+Cluster3Dataset <- your_dataset %>%
+  filter(Cluster == 3)
+
+Cluster4Dataset <- your_dataset %>%
+  filter(Cluster == 4)
+
+
+ts_data1 <- ts(Cluster1Dataset$Value, start = c(year(min(Cluster1Dataset$Date)), month(min(Cluster1Dataset$Date))),
+                end = c(year(max(Cluster1Dataset$Date)), month(max(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$Value, start = c(year(min(Cluster2Dataset$Date)), month(min(Cluster2Dataset$Date))),
+                end = c(year(max(Cluster2Dataset$Date)), month(max(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$Value, start = c(year(min(Cluster3Dataset$Date)), month(min(Cluster3Dataset$Date))),
+                end = c(year(max(Cluster3Dataset$Date)), month(max(Cluster3Dataset$Date))), frequency = 12)
+
+
+ts_data4 <- ts(Cluster4Dataset$Value, start = c(year(min(Cluster4Dataset$Date)), month(min(Cluster4Dataset$Date))),
+                end = c(year(max(Cluster4Dataset$Date)), month(max(Cluster4Dataset$Date))), frequency = 12)
+
+
+```
+
+```{r}
+
+diff1<- diff(diff(ts_data1, lag=12),lag=1)
+diff1<- diff(diff(ts_data2, lag=12),lag=1)
+diff1<- diff(diff(ts_data3, lag=12),lag=1)
+diff1<- diff(diff(ts_data4, lag=12),lag=1)
+
+fit1<- ses(ts_data1, h=5)
+fit2<- ses(ts_data2, h=5)
+fit3<- ses(ts_data3, h=5)
+fit4<- ses(ts_data4, h=5)
+
+
+plot(ts_data1, ylab="Power sector emissions", xlab="Year")
+lines(fitted(fit1), col="blue", type="o")
+
+plot(ts_data2, ylab="Power sector emissions", xlab="Year")
+lines(fitted(fit2), col="blue", type="o")
+
+plot(ts_data3, ylab="Power sector emissions", xlab="Year")
+lines(fitted(fit3), col="blue", type="o")
+
+plot(ts_data4, ylab="Power sector emissions", xlab="Year")
+lines(fitted(fit4), col="blue", type="o")
+
+summary(fit1)
+```
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+checkresiduals(fit3)
+checkresiduals(fit4)
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- tslm(ts_data1 ~ trend + season)
+model2 <- tslm(ts_data2 ~ trend + season)
+model3 <- tslm(ts_data3 ~ trend + season)
+model4 <- tslm(ts_data4 ~ trend + season)
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Electricity Price")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Electricity Price")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Electricity Price")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Electricity Price")
+lines(fitted(model4), col="blue")
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- auto.arima(ts_data1)
+model2 <- auto.arima(ts_data2)
+model3 <- auto.arima(ts_data3)
+model4 <- auto.arima(ts_data4)
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Electricity Price")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Electricity Price")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Electricity Price")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Electricity Price")
+lines(fitted(model4), col="blue")
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+checkresiduals(model4)
+```
+
+```{r}
+fc1<- holt(diff1, h=15)
+fc1_2<- holt(diff1, damped=T, phi=0.9, h=15)
+
+fc2 <- holt(diff2, h=15)
+fc2_2<- holt(diff2, damped=T, phi=0.9, h=15)
+
+fc3<- holt(diff3, h=15)
+fc3_2<- holt(diff3, damped=T, phi=0.9, h=15)
+
+fc4<- holt(diff4, h=15)
+fc4_2<- holt(diff4, damped=T, phi=0.9, h=15)
+
+autoplot(diff1)+
+autolayer(fc1, series="Holt's method", PI=F)+
+autolayer(fc1_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff2)+
+autolayer(fc2, series="Holt's method", PI=F)+
+autolayer(fc2_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff3)+
+autolayer(fc3, series="Holt's method", PI=F)+
+autolayer(fc3_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff4)+
+autolayer(fc4, series="Holt's method", PI=F)+
+autolayer(fc4_2, series="Damped Holt's method", PI=F)
+
+
+```
+
+```{r}
+checkresiduals(fc1)
+checkresiduals(fc2)
+checkresiduals(fc3)
+checkresiduals(fc4)
+```
+
+```{r}
+checkresiduals(fc1_2)
+checkresiduals(fc2_2)
+checkresiduals(fc3_2)
+checkresiduals(fc4_2)
+```
+
+```{r}
+aust1<- window(ts_data1, start=2015)
+fit11<- hw(aust1, seasonal="additive")
+fit12<- hw(aust1, seasonal="multiplicative")
+
+aust2<- window(ts_data2, start=2015)
+fit21<- hw(aust2, seasonal="additive")
+fit22<- hw(aust2, seasonal="multiplicative")
+
+aust3<- window(ts_data3, start=2015)
+fit31<- hw(aust3, seasonal="additive")
+fit32<- hw(aust3, seasonal="multiplicative")
+
+aust4<- window(ts_data4, start=2015)
+fit41<- hw(aust4, seasonal="additive")
+fit42<- hw(aust4, seasonal="multiplicative")
+
+autoplot(aust1)+
+autolayer(fit11, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit12, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(aust2)+
+autolayer(fit21, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit22, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(aust3)+
+autolayer(fit31, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit32, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(aust4)+
+autolayer(fit41, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit42, series="Holt-Winters' method(multiplicative)", PI=F)
+
+
+```
+
+```{r}
+checkresiduals(fit11)
+checkresiduals(fit21)
+checkresiduals(fit31)
+checkresiduals(fit41)
+```
+
+```{r}
+checkresiduals(fit12)
+checkresiduals(fit22)
+checkresiduals(fit32)
+checkresiduals(fit42)
+```
+
+## Change in 2022
+
+In 2022, the EU power sector experienced a mixed emission trend. The final four months witnessed a decline in CO2 emissions, driven by reduced demand and fossil generation. Despite an overall 3.9% increase compared to 2021, earlier spikes were caused by nuclear and hydro shortfalls, necessitating heightened fossil generation. Germany led in absolute emission rise (6.1%), while Poland stood out with the most significant reduction (-2.9%).
+
+```{r}
+
+
+library(dplyr)
+
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Total" & EU=="1")
+
+# Assuming 'your_data' is your dataset
+averageEmissions <- your_dataset %>%
+  group_by(Area) %>%
+  summarise(averageEmissions = mean(Value)) %>%
+  arrange(desc(averageEmissions)) %>%  # Sort in descending order based on average renewable energy
+  top_n(25, wt = averageEmissions)
+
+averageEmissions
+
+```
+
+```{r}
+
+library(dplyr)
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Power sector emissions" & Subcategory == "Total" & EU== "1")
+
+
+# Assuming 'your_data' is your dataset
+EmissionReduction <- your_dataset %>%
+  group_by(Area) %>%
+  summarise(EmissionReduction = abs(first(Value) -last(Value))) %>%
+  arrange(desc(EmissionReduction)) %>%  # Sort in descending order based on renewable growth
+  top_n(25, wt = EmissionReduction)
+
+# 'renewableGrowth' now contains the top 20 countries with the highest renewable growth.
+# 'your_data' now contains the top 10 countries with the highest renewable growth.
+EmissionReduction
+```
+
+```{r}
+# Assuming 'dataset_Demand' contains the filtered data
+
+
+# Convert Date column to a proper date format
+your_dataset$Date <- as.Date(your_dataset$Date)
+
+# Get unique countries in Europe from your dataset
+european_countries <- unique(your_dataset$Area)
+
+# Loop through each European country and create plots
+for (country in european_countries) {
+  # Subset the data for the current country
+  ts_data <- ts(your_dataset[your_dataset$Area == country, "Value"])
+
+  # Plot the autocorrelation using the acf function
+  acf(ts_data, main = paste("Autocorrelation for", country))
+
+  # Plot the time series
+  plot(ts_data, main = paste("Time Series for", country), xlab = "Date", ylab = "Power sector emissions")
+}
+
+
+```
+
+## Long-term trend
+
+In 2022, the EU witnessed a second consecutive year of rising emissions, following the 2021 post-pandemic rebound. This contrasts with a significant three-year reduction trend from 2018 to 2020. Despite the recent increases, the EU's carbon intensity in 2022 (255 gCO2/kWh) is notably lower than in 2000 (396 gCO2/kWh). The shift towards cleaner energy, propelled by wind and solar deployment since 2010, has contributed to a 32% reduction in total EU emissions since 2010. Moreover, carbon intensity has declined in every EU country since the Paris Agreement in 2015, resulting in a 22% decrease in annual power sector emissions.
+
+```{r}
+library(forecast)
+library(lubridate)
+library(dplyr)
+
+
+# Get unique countries in Europe from your dataset
+unique_countries <- unique(your_dataset$Area)
+
+# Convert 'Date' to a proper date format
+your_dataset$Date <- ymd(your_dataset$Date)
+
+# Create time series for each country
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- your_dataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+}
+
+
+
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggseasonplot(time_series_data[[country]], polar = TRUE) +
+    ylab("Power sector emissions") +
+    ggtitle(paste("Polar seasonal plot:", country)))
+}
+```
+
+```{r}
+library(ggplot2)
+
+
+# Get unique countries in Europe from your dataset
+unique_countries <- unique(your_dataset$Area)
+
+# Convert 'Date' to a proper date format
+your_dataset$Date <- ymd(your_dataset$Date)
+
+
+# Loop through each country and perform STL decomposition
+for (country in unique_countries) {
+  # Subset the data for the current country
+  country_data <- your_dataset[your_dataset$Area == country, ]
+
+  # Create a time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+
+  # Apply STL decomposition
+  stl_result <- stl(ts_data, s.window = "periodic")
+
+  # Plot the decomposed components
+  plot(stl_result, main = paste("STL Decomposition -", country))
+}
+
+```
+
+# Annual data analysis
+
+### Comparison between countries
+
+Now let's plot demand, but in this case for each country from EU.
+
+```{r}
+library(dplyr)
+
+data <- read.csv("Data BEFD/yearly_full_release_long_format.csv")
+
+data_eu <- subset(data, EU==1)
+contries <- unique(data_eu$Area)
+print(unique(data_eu$Area))
+
+```
+
+Basic statistics for each country
+
+```{r}
+# Load the dplyr package
+library(dplyr)
+
+
+# Group by Country and Variable and calculate mean, median, and standard deviation
+summary_stats <- subset(data_eu, Variable == "Demand") %>%
+  group_by(Area) %>%
+  summarize(
+    Mean = mean(Value),
+    Median = median(Value),
+    StandardDeviation = sd(Value),
+    IQR = IQR(Value)
+  )
+
+# Print the summary statistics
+print(summary_stats)
+```
+
+Correlation coefficients:
+
+```{r}
+library(corrplot)
+# Sample vector
+countries <- unique(data_eu$Area)
+total_demand <- data.frame(Year = unique(data_eu$Year))
+# Loop with enumerate-like functionality
+for (i in seq_along(countries) ){
+  country <- countries[i]
+  country_demand <- subset(data_eu, Area == country & Variable == "Demand")$Value
+  total_demand[country] <- country_demand
+  #print(paste("Country:", country, "demand", length(country_demand)))
+}
+head(total_demand)
+
+cor_matrix <- cor(total_demand[, -1])
+#print(cor_matrix)
+
+corrplot(cor_matrix)
+```
+
+```{r}
+# Load ggplot2 package
+library(ggplot2)
+
+library(dplyr)
+
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+subset_data <- subset(data_eu, Variable == "Demand")
+
+
+# Create a line plot using ggplot2
+ggplot(subset_data, aes(x = Year, y = Value, color = Area, group = Area)) +
+  geom_line() +
+  labs(title = "Values Over Time for Different Countries",
+       x = "Year",
+       y = "Value",
+       color = "Country") +
+  theme_minimal()
+
+```
+
+```{r}
+# Install and load necessary packages
+#install.packages("plotly")
+library(plotly)
+
+# Assuming 'df' is your data frame
+# Assuming 'Area' is the country column, 'Year' is the year column, and 'Value' is the value column
+
+# Create an interactive line plot with plotly
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+```
+
+let's do the clustrization
+
+```{r}
+# Assuming 'subset_dataset' is your data frame with 'Area', 'Value', and 'Year' columns
+
+# Extract the 'Value' column for clustering
+data_for_clustering <- subset_data$Value
+
+# Set the number of clusters (adjust as needed)
+num_clusters <- 4
+
+# Perform k-means clustering
+kmeans_result <- kmeans(data_for_clustering, centers = num_clusters)
+
+# Add the cluster labels to your original data frame
+subset_data$Cluster <- as.factor(kmeans_result$cluster)
+
+# Print the cluster centers
+print(kmeans_result$centers)
+
+# Visualize the clusters
+# library(ggplot2)
+# ggplot(subset_data, aes(x = Year, y = Value, color = Cluster)) +
+#   geom_point() +
+#   labs(title = "Countries Clustered Based on Value",
+#        x = "Year",
+#        y = "Value",
+#        color = "Cluster") +
+#   theme_minimal()
+
+
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Countries Clustered Based on Value",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+```
+
+Next step is to use mean of each cluster for further analysis:
+
+```{r}
+# Assuming 'subset_dataset' is your data frame with 'Area', 'Value', 'Year', and 'Cluster' columns
+
+# Group by Cluster and Year, then calculate the mean
+cluster_means <- subset_data %>%
+  group_by(Cluster, Year) %>%
+  summarise(Value = mean(Value))
+
+# Print the resulting data frame
+print(cluster_means)
+
+library(plotly)
+
+plot_ly(cluster_means, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "lines") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Value"),
+         showlegend = TRUE)
+
+```
+
+## Forecasting for clusters
+
+## Autocorrelation for clusters
+
+Let's built autocorrelation for each cluster
+
+```{r}
+# Assuming 'cluster_means' is your data frame with 'Cluster', 'Year', and 'Value' columns
+
+# Get unique clusters
+clusters <- unique(cluster_means$Cluster)
+
+# Set up a 2x2 layout
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+# Loop through clusters
+# for (c in clusters) {
+#   t <- subset(cluster_means, Cluster == c)
+#   ts_data <- ts(t$Value)
+# 
+#   # Plot autocorrelation
+#   acf(ts_data, main = paste("Autocorrelation for Cluster", c))
+# 
+#   # Plot time series
+#   plot(ts_data, main = paste("Time Series for Cluster", c), xlab = "Year", ylab = "Demand")
+# }
+# 
+# # Reset the plot layout to default
+# par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
+
+
+
+```
+
+From plots above: no seasonality and probably trend is descending .
+
+## Simple forecasting
+
+```{r}
+library(forecast)
+  ccc <- subset(cluster_means, Cluster==1)
+  cc <- ts(ccc$Value)
+  autoplot(cc) +
+  autolayer(meanf(cc, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(cc, h=10),
+    series="Random walk", PI=FALSE) +
+  autolayer(rwf(cc, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(naive(cc, h=10),
+    series="Naive", PI=FALSE) +
+  ggtitle("Cluster 1") +
+  xlab("Year") + ylab("Demand") +
+  guides(colour=guide_legend(title="Forecast"))
+
+ccc <- subset(cluster_means, Cluster==2)
+  cc <- ts(ccc$Value)
+  autoplot(cc) +
+  autolayer(meanf(cc, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(cc, h=10),
+    series="Random walk", PI=FALSE) +
+  autolayer(rwf(cc, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(naive(cc, h=10),
+    series="Naive", PI=FALSE) +
+  ggtitle("Cluster 2") +
+  xlab("Year") + ylab("Demand") +
+  guides(colour=guide_legend(title="Forecast"))
+  
+ccc <- subset(cluster_means, Cluster==3)
+  cc <- ts(ccc$Value)
+  autoplot(cc) +
+  autolayer(meanf(cc, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(cc, h=10),
+    series="Random walk", PI=FALSE) +
+  autolayer(rwf(cc, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(naive(cc, h=10),
+    series="Naive", PI=FALSE) +
+  ggtitle("Cluster 3") +
+  xlab("Year") + ylab("Demand") +
+  guides(colour=guide_legend(title="Forecast"))
+  
+ccc <- subset(cluster_means, Cluster==4)
+  cc <- ts(ccc$Value)
+  autoplot(cc) +
+  autolayer(meanf(cc, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(cc, h=10),
+    series="Random walk", PI=FALSE) +
+  autolayer(rwf(cc, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(naive(cc, h=10),
+    series="Naive", PI=FALSE) +
+  ggtitle("Cluster 4") +
+  xlab("Year") + ylab("Demand") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+### Residual diagnostics
+
+```{r}
+library(forecast)
+library(ggplot2)
+#cc <- subset(cluster_means, Cluster==1)
+# autoplot(ts(cc$Value)) +
+#   xlab("Year") + ylab("Demand") +
+#   ggtitle("Demand")
+# 
+# res <- residuals(naive(ts(cc$Value)))
+# autoplot(res) + xlab("Year") + ylab("") +
+#   ggtitle("Residuals from naïve method")
+print("------------Cluster 1---------------")
+cc <- subset(cluster_means, Cluster==1)
+checkresiduals(meanf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value), drift=TRUE))
+checkresiduals(naive(ts(cc$Value)))
+
+print("------------Cluster 2---------------")
+cc <- subset(cluster_means, Cluster==2)
+checkresiduals(meanf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value), drift=TRUE))
+checkresiduals(naive(ts(cc$Value)))
+
+print("------------Cluster 3---------------")
+cc <- subset(cluster_means, Cluster==3)
+checkresiduals(meanf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value), drift=TRUE))
+checkresiduals(naive(ts(cc$Value)))
+
+print("------------Cluster 4---------------")
+cc <- subset(cluster_means, Cluster==4)
+checkresiduals(meanf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value)))
+checkresiduals(rwf(ts(cc$Value), drift=TRUE))
+checkresiduals(naive(ts(cc$Value)))
+
+
+```
+
+The Ljung-Box test indicates that there are no significant autocorrelation in the residuals for any of this model.
+
+## Evaluating Forecast accuracy
+
+```{r}
+cl1 <- ts(subset(cluster_means, Cluster==1)$Value, start=2000, frequency=1)
+
+train_cl1 <- window(cl1,start=2000,end=2017)
+cl1fit1 <- meanf(train_cl1,h=5)
+cl1fit2 <- rwf(train_cl1,h=5)
+cl1fit3 <- rwf(train_cl1, drift=TRUE, h=5)
+#cl1fit4 <- naive(train_cl1, h=5)
+#cl1fit5 <- snaive(train_cl1, h=5)
+autoplot(window(cl1, start=2000)) +
+  autolayer(cl1fit1, series="Mean", PI=FALSE) +
+  autolayer(cl1fit2, series="Random walk", PI=FALSE) +
+  autolayer(cl1fit3, series="Random walk with drift", PI=FALSE) +
+  #autolayer(cl1fit4, series="Naive", PI=FALSE) +
+  #autolayer(cl1fit5, series="Seasonal Naive", PI=FALSE) +
+  xlab("Year") + ylab("Demand") +
+  ggtitle("Forecasts for electricity demand Cluster 1") +
+  guides(colour=guide_legend(title="Forecast"))
+
+print("Forecast accuracy for Cluster 1")
+test_cl1 <- window(cl1,start=2018)
+print("Mean model")
+accuracy(cl1fit1, test_cl1)
+print("Random walk model")
+accuracy(cl1fit2, test_cl1)
+print("Random walk with drift model")
+accuracy(cl1fit3, test_cl1)
+print("---------------------------------------------------")
+
+
+
+cl1 <- ts(subset(cluster_means, Cluster==2)$Value, start=2000, frequency=1)
+
+train_cl1 <- window(cl1,start=2000,end=2017)
+cl1fit1 <- meanf(train_cl1,h=5)
+cl1fit2 <- rwf(train_cl1,h=5)
+cl1fit3 <- rwf(train_cl1, drift=TRUE, h=5)
+#cl1fit4 <- naive(train_cl1, h=5)
+#cl1fit5 <- snaive(train_cl1, h=5)
+autoplot(window(cl1, start=2000)) +
+  autolayer(cl1fit1, series="Mean", PI=FALSE) +
+  autolayer(cl1fit2, series="Random walk", PI=FALSE) +
+  autolayer(cl1fit3, series="Random walk with drift", PI=FALSE) +
+  #autolayer(cl1fit4, series="Naive", PI=FALSE) +
+  #autolayer(cl1fit5, series="Seasonal Naive", PI=FALSE) +
+  xlab("Year") + ylab("Demand") +
+  ggtitle("Forecasts for electricity demand Cluster 2") +
+  guides(colour=guide_legend(title="Forecast"))
+
+print("Forecast accuracy for Cluster 2")
+test_cl1 <- window(cl1,start=2018)
+print("Mean model")
+accuracy(cl1fit1, test_cl1)
+print("Random walk model")
+accuracy(cl1fit2, test_cl1)
+print("Random walk with drift model")
+accuracy(cl1fit3, test_cl1)
+print("---------------------------------------------------")
+
+cl1 <- ts(subset(cluster_means, Cluster==3)$Value, start=2000, frequency=1)
+
+train_cl1 <- window(cl1,start=2000,end=2017)
+cl1fit1 <- meanf(train_cl1,h=5)
+cl1fit2 <- rwf(train_cl1,h=5)
+cl1fit3 <- rwf(train_cl1, drift=TRUE, h=5)
+#cl1fit4 <- naive(train_cl1, h=5)
+#cl1fit5 <- snaive(train_cl1, h=5)
+autoplot(window(cl1, start=2000)) +
+  autolayer(cl1fit1, series="Mean", PI=FALSE) +
+  autolayer(cl1fit2, series="Random walk", PI=FALSE) +
+  autolayer(cl1fit3, series="Random walk with drift", PI=FALSE) +
+  #autolayer(cl1fit4, series="Naive", PI=FALSE) +
+  #autolayer(cl1fit5, series="Seasonal Naive", PI=FALSE) +
+  xlab("Year") + ylab("Demand") +
+  ggtitle("Forecasts for electricity demand Cluster 3") +
+  guides(colour=guide_legend(title="Forecast"))
+
+print("Forecast accuracy for Cluster 3")
+test_cl1 <- window(cl1,start=2018)
+print("Mean model")
+accuracy(cl1fit1, test_cl1)
+print("Random walk model")
+accuracy(cl1fit2, test_cl1)
+print("Random walk with drift model")
+accuracy(cl1fit3, test_cl1)
+print("---------------------------------------------------")
+
+cl1 <- ts(subset(cluster_means, Cluster==4)$Value, start=2000, frequency=1)
+
+train_cl1 <- window(cl1,start=2000,end=2017)
+cl1fit1 <- meanf(train_cl1,h=5)
+cl1fit2 <- rwf(train_cl1,h=5)
+cl1fit3 <- rwf(train_cl1, drift=TRUE, h=5)
+#cl1fit4 <- naive(train_cl1, h=5)
+#cl1fit5 <- snaive(train_cl1, h=5)
+autoplot(window(cl1, start=2000)) +
+  autolayer(cl1fit1, series="Mean", PI=FALSE) +
+  autolayer(cl1fit2, series="Random walk", PI=FALSE) +
+  autolayer(cl1fit3, series="Random walk with drift", PI=FALSE) +
+  #autolayer(cl1fit4, series="Naive", PI=FALSE) +
+  #autolayer(cl1fit5, series="Seasonal Naive", PI=FALSE) +
+  xlab("Year") + ylab("Demand") +
+  ggtitle("Forecasts for electricity demand Cluster 4") +
+  guides(colour=guide_legend(title="Forecast"))
+
+print("Forecast accuracy for Cluster 4")
+test_cl1 <- window(cl1,start=2018)
+print("Mean model")
+accuracy(cl1fit1, test_cl1)
+print("Random walk model")
+accuracy(cl1fit2, test_cl1)
+print("Random walk with drift model")
+accuracy(cl1fit3, test_cl1)
+print("---------------------------------------------------")
+```
+
+Now let's compute forecast accuracy for those models:
+
+```{r}
+test_cl1 <- window(cl1,start=2018)
+accuracy(cl1fit1, test_cl1)
+accuracy(cl1fit2, test_cl1)
+accuracy(cl1fit3, test_cl1)
+#accuracy(cl1fit4, test_cl1) #Naive and random walk are the same
+```
+
+Random walk with drift seems to have a slightly lower RMSE, MAE, MAPE, and ACF1 compared to others, suggesting better performance.
+
+### Time-series Cross Validation
+
+```{r}
+cl <- ts(subset(cluster_means, Cluster==1)$Value, start=2000, frequency=1)
+
+print("CLuster 1")
+e <- tsCV(cl, rwf, drift=TRUE, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl, drift=TRUE))^2, na.rm=TRUE))
+
+e <- tsCV(cl, meanf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(meanf(cl))^2, na.rm=TRUE))
+
+e <- tsCV(cl, rwf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl))^2, na.rm=TRUE))
+print("----------------------------------------")
+
+cl <- ts(subset(cluster_means, Cluster==2)$Value, start=2000, frequency=1)
+
+print("CLuster 2")
+e <- tsCV(cl, rwf, drift=TRUE, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl, drift=TRUE))^2, na.rm=TRUE))
+
+e <- tsCV(cl, meanf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(meanf(cl))^2, na.rm=TRUE))
+
+e <- tsCV(cl, rwf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl))^2, na.rm=TRUE))
+print("----------------------------------------")
+
+cl <- ts(subset(cluster_means, Cluster==3)$Value, start=2000, frequency=1)
+
+print("CLuster 3")
+e <- tsCV(cl, rwf, drift=TRUE, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl, drift=TRUE))^2, na.rm=TRUE))
+
+e <- tsCV(cl, meanf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(meanf(cl))^2, na.rm=TRUE))
+
+e <- tsCV(cl, rwf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl))^2, na.rm=TRUE))
+print("----------------------------------------")
+
+cl <- ts(subset(cluster_means, Cluster==4)$Value, start=2000, frequency=1)
+
+print("CLuster 4")
+e <- tsCV(cl, rwf, drift=TRUE, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl, drift=TRUE))^2, na.rm=TRUE))
+
+e <- tsCV(cl, meanf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(meanf(cl))^2, na.rm=TRUE))
+
+e <- tsCV(cl, rwf, h=1)
+sqrt(mean(e^2, na.rm=TRUE))
+sqrt(mean(residuals(rwf(cl))^2, na.rm=TRUE))
+print("----------------------------------------")
+```
+
+```{r}
+num_val <- 21
+cl <- ts(subset(cluster_means, Cluster==1)$Value, start=2000, frequency=1)
+
+e <- tsCV(cl, forecastfunction=rwf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point() +
+  ggtitle("MSE for Cluster 1 random walk Model")
+
+e <- tsCV(cl, forecastfunction=rwf,drift=TRUE, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 1 random walk with drift Model")
+
+e <- tsCV(cl, forecastfunction=meanf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 1 average Model")
+
+```
+
+### 
+
+```{r}
+cl <- ts(subset(cluster_means, Cluster==2)$Value, start=2000, frequency=1)
+
+e <- tsCV(cl, forecastfunction=rwf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point() +
+  ggtitle("MSE for Cluster 2 random walk Model")
+
+e <- tsCV(cl, forecastfunction=rwf,drift=TRUE, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 2 random walk with drift Model")
+
+e <- tsCV(cl, forecastfunction=meanf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 2 average Model")
+
+
+cl <- ts(subset(cluster_means, Cluster==3)$Value, start=2000, frequency=1)
+
+e <- tsCV(cl, forecastfunction=rwf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point() +
+  ggtitle("MSE for Cluster 3 random walk Model")
+
+e <- tsCV(cl, forecastfunction=rwf,drift=TRUE, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 3 random walk with drift Model")
+
+e <- tsCV(cl, forecastfunction=meanf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 3 average Model")
+
+
+cl <- ts(subset(cluster_means, Cluster==4)$Value, start=2000, frequency=1)
+
+e <- tsCV(cl, forecastfunction=rwf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point() +
+  ggtitle("MSE for Cluster 4 random walk Model")
+
+e <- tsCV(cl, forecastfunction=rwf,drift=TRUE, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 4 random walk with drift Model")
+
+e <- tsCV(cl, forecastfunction=meanf, h=num_val)
+# Compute the MSE values and remove missing values
+mse <- colMeans(e^2, na.rm = T)
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:num_val, MSE = mse) %>%
+  ggplot(aes(x = h, y = MSE)) + geom_point()+
+  ggtitle("MSE for Cluster 4 average Model")
+```
+
+### Prediction intervals
+
+```{r}
+cl <- ts(subset(cluster_means, Cluster==1)$Value, start=2000, frequency=1)
+autoplot(rwf(cl, bootstrap = TRUE))
+autoplot(rwf(cl, drift=TRUE, bootstrap = TRUE))
+autoplot(meanf(cl, bootstrap = TRUE))
+```
+
+## CO2 emissions
+
+```{r}
+library(plotly)
+data_co2 <- subset(data_eu, Variable == "Total emissions")
+  
+plot_ly(data_co2, x = ~Year, y = ~Value, color = ~Area, type = "scatter", mode = "lines", line = list(width = 2)) %>%
+  layout(title = "Values Over Time for Different Countries",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+```
+
+We do the same clasterization as for demand variable
+
+```{r}
+library(dplyr)
+
+subset_data_co2 <- data.frame(data_co2$Area,data_co2$Year, data_co2$Value)
+colnames(subset_data_co2) <- c("Cluster", "Year", "Value")
+
+cp <- unique(subset_data_co2$Cluster)
+print(cp)
+
+subset_data_co2[subset_data_co2 == "Italy" |subset_data_co2 == "Spain"] <- 1
+subset_data_co2[subset_data_co2 == "France" |subset_data_co2 == "Germany"] <- 2
+subset_data_co2[subset_data_co2 == "Belgium" | subset_data_co2 == "Finland" | 
+                  subset_data_co2 == "Netherlands" | subset_data_co2 == "Poland" | 
+                  subset_data_co2 == "Sweden"] <- 3
+#countries_to_keep <- "Austria Belgium Bulgaria Croatia Cyprus Czechia Denmark Estonia Finland France Germany Greece Hungary Ireland Italy Latvia Lithuania Luxembourg Malta Netherlands Poland Portugal Romania Slovakia Slovenia Spain Sweden"
+for (c in cp){
+  subset_data_co2[(subset_data_co2 == c)] <- 4
+}
+
+```
+
+```{r}
+# Extract the 'Value' column for clustering
+data_for_clustering <- data_co2$Value
+
+# Set the number of clusters (adjust as needed)
+num_clusters <- 4
+
+
+
+# Perform k-means clustering
+kmeans_result <- kmeans(data_for_clustering, centers = num_clusters)
+
+# Add the cluster labels to your original data frame
+data_co2$Cluster <- as.factor(kmeans_result$cluster)
+
+# Print the cluster centers
+print(kmeans_result$centers)
+
+# Visualize the clusters
+# library(ggplot2)
+# ggplot(subset_data, aes(x = Year, y = Value, color = Cluster)) +
+#   geom_point() +
+#   labs(title = "Countries Clustered Based on Value",
+#        x = "Year",
+#        y = "Value",
+#        color = "Cluster") +
+#   theme_minimal()
+
+
+plot_ly(subset_data, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "markers") %>%
+  layout(title = "Countries Clustered Based on Value",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Value"),
+         showlegend = TRUE)
+
+
+```
+
+```{r}
+# Assuming 'subset_dataset' is your data frame with 'Area', 'Value', 'Year', and 'Cluster' columns
+
+# Group by Cluster and Year, then calculate the mean
+cluster_means_co2 <- subset_data_co2 %>%
+  group_by(Cluster, Year) %>%
+  summarise(Value = mean(Value))
+
+# Print the resulting data frame
+print(cluster_means_co2)
+
+library(plotly)
+
+plot_ly(cluster_means_co2, x = ~Year, y = ~Value, color = ~Cluster, type = "scatter", mode = "lines") %>%
+  layout(title = "Cluster Means Over Time",
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Value"),
+         showlegend = TRUE)
+```
+
+## Time-Series Regression Models
+
+```{r}
+#Cluster 1
+
+library(xts)
+
+
+x <- ts(subset(cluster_means, Cluster == 1)$Value , start=2000, frequency = 1)
+y <- ts(subset(cluster_means_co2, Cluster == 1)$Value, start=2000, frequency = 1)
+
+d <- 
+
+autoplot(x, facets=TRUE) +
+  xlab("Year: 2014") + ylab("") +
+  ggtitle("Demand Cluster 1")
+
+autoplot(y, facets=TRUE) +
+  xlab("Year: 2014") + ylab("") +
+  ggtitle("CO2 emission Cluster 1")
+
+
+as.data.frame(d) |>
+  ggplot(aes(x=x, y=y)) +
+  geom_point() +
+  ylab("Demand (GW)") + xlab("Temperature (Celsius)")
+
+
+```
+
+### Average and Simple LR method forecasting
+
+Below we ran sinple linear regression without splitting for train and test sets.
+
+```{r}
+rmse_results <- data.frame(matrix(nrow = 0, ncol = 3))
+colnames(rmse_results) <- c("Cluster", "Average", "LR")
+
+print("Cluster 1")
+subset_means <- subset(cluster_means, Cluster == 1)
+  
+lm_model <- lm(Value ~ Year, data = subset_means)
+  
+# Print the linear regression models
+#print(lm_model)
+lm_predictions1 <- predict(lm_model, newdata = subset_means)
+subset_means$LRForecast <- lm_predictions1
+subset_means$AverageForecast <- df_with_forecasts$AverageForecast[df_with_forecasts$Cluster==1]
+
+#print(lm_predictions1)
+
+rmse_lm <- sqrt(mean((subset_means$Value - subset_means$LRForecast)^2))
+
+rmse_avg <- sqrt(mean((subset_means$Value - subset_means$AverageForecast)^2))
+
+rmse_results <- rbind(rmse_results, data.frame(Cluster = 1, Average=rmse_avg, LR=rmse_lm))
+
+#----------------------------------------------
+
+print("Cluster 2")
+subset_means <- subset(cluster_means, Cluster == 2)
+  
+lm_model <- lm(Value ~ Year, data = subset_means)
+  
+# Print the linear regression models
+#print(lm_model)
+lm_predictions2 <- predict(lm_model, newdata = subset_means)
+#print(lm_predictions2)
+subset_means$LRForecast <- lm_predictions2
+subset_means$AverageForecast <- df_with_forecasts$AverageForecast[df_with_forecasts$Cluster==2]
+
+#print(lm_predictions1)
+
+rmse_lm <- sqrt(mean((subset_means$Value - subset_means$LRForecast)^2))
+
+rmse_avg <- sqrt(mean((subset_means$Value - subset_means$AverageForecast)^2))
+
+rmse_results <- rbind(rmse_results, data.frame(Cluster = 2, Average=rmse_avg, LR=rmse_lm))
+
+#----------------------------------------------
+print("Cluster 3")
+subset_means <- subset(cluster_means, Cluster == 3)
+  
+lm_model <- lm(Value ~ Year, data = subset_means)
+
+  
+# Print the linear regression models
+#print(lm_model)
+lm_predictions3 <- predict(lm_model, newdata = subset_means)
+#print(lm_predictions3)
+subset_means$LRForecast <- lm_predictions3
+subset_means$AverageForecast <- df_with_forecasts$AverageForecast[df_with_forecasts$Cluster==3]
+
+#print(lm_predictions1)
+
+rmse_lm <- sqrt(mean((subset_means$Value - subset_means$LRForecast)^2))
+
+rmse_avg <- sqrt(mean((subset_means$Value - subset_means$AverageForecast)^2))
+
+rmse_results <- rbind(rmse_results, data.frame(Cluster = 3, Average=rmse_avg, LR=rmse_lm))
+#----------------------------------------------
+
+print("Cluster 4")
+subset_means <- subset(cluster_means, Cluster == 4)
+  
+lm_model <- lm(Value ~ Year, data = subset_means)
+  
+# Print the linear regression models
+#print(lm_model)
+lm_predictions4 <- predict(lm_model, newdata = subset_means)
+#print(lm_predictions4)
+subset_means$LRForecast <- lm_predictions4
+subset_means$AverageForecast <- df_with_forecasts$AverageForecast[df_with_forecasts$Cluster==4]
+
+#print(lm_predictions1)
+
+rmse_lm <- sqrt(mean((subset_means$Value - subset_means$LRForecast)^2))
+
+rmse_avg <- sqrt(mean((subset_means$Value - subset_means$AverageForecast)^2))
+
+rmse_results <- rbind(rmse_results, data.frame(Cluster = 4, Average=rmse_avg, LR=rmse_lm))
+#----------------------------------------------
+l <- c(lm_predictions1,lm_predictions2, lm_predictions3, lm_predictions4)
+df_with_forecasts$LRForecast <- l
+```
+
+Before we checked simple linear regression and average method. We applied and calculated rmse for each cluster.
+
+### Average and simple LR forecasting with train/test split
+
+Let's try do the same but with train and test split:
+
+```{r}
+library(zoo)
+
+#rmse_results_split <- data.frame(matrix(nrow = 0, ncol = 4))
+#rsq_results_split <- data.frame(matrix(nrow = 0, ncol = 4))
+#colnames(rmse_results_split) <- c("Cluster", "Train_or_Test", "Average", "LR")
+#colnames(rsq_results_split) <- c("Cluster", "Train_or_Test", "Average", "LR")
+
+train_all <- data.frame()
+test_all <- data.frame()
+
+for ( c in clusters){
+  print(paste("Cluster", c))
+  
+  subset_cluster <- subset(cluster_means, Cluster == c)
+  
+  #print(subset_cluster_mean)
+  
+  #train and test split 
+  
+  split_point <- 2018
+  
+  train_data <- subset(subset_cluster, Year < split_point)
+  test_data <- subset(subset_cluster, Year >= split_point)
+  
+  #Average method
+  train_data$Average <- mean(train_data$Value)
+  test_data$Average <- mean(train_data$Value)
+  
+  #rmse_avg_train <- sqrt(mean((train_data$Value - train_data$Average)^2))
+  #rmse_avg_test <- sqrt(mean((test_data$Value - test_data$Average)^2))
+  
+  #rsq_train_avg <- 1 - sum((train_data$Value - train_data$Average)^2) / sum((train_data$Value - mean(train_data$Value))^2)
+  #rsq_test_avg <- 1 - sum((test_data$Value - test_data$Average)^2) / sum((test_data$Value - mean(test_data$Value))^2)
+  
+  #simple LR method
+  lm_model <- lm(Value ~ Year, data = train_data)
+  
+  train_data$LR <- predict(lm_model, newdata = train_data)
+  test_data$LR <- predict(lm_model, newdata = test_data)
+  
+  #rmse_lm_train <- sqrt(mean((train_data$Value - train_data$LR)^2))
+  #rmse_lm_test <- sqrt(mean((test_data$Value - test_data$LR)^2))
+  
+  #rmse_results_split <- rbind(rmse_results_split, data.frame(Cluster = c, Train_or_Test="Train", Average=rmse_avg_train, LR=rmse_lm_train))
+  #rmse_results_split <- rbind(rmse_results_split, data.frame(Cluster = c, Train_or_Test="Test", Average=rmse_avg_test, LR=rmse_lm_test))
+  
+  #rsq_train_lm <- summary(lm_model)$r.squared
+  #rsq_test_lm <- 1 - sum((test_data$Value - test_data$LR)^2) / sum((test_data$Value - mean(test_data$Value))^2)
+  
+  #rsq_results_split <- rbind(rsq_results_split, data.frame(Cluster = c, Train_or_Test="Train", Average=rsq_train_avg, LR=rsq_train_lm))
+  #rsq_results_split <- rbind(rsq_results_split, data.frame(Cluster = c, Train_or_Test="Test", Average=rsq_test_avg, LR=rsq_test_lm))
+  train_all <- rbind(train_all, train_data)
+  test_all <- rbind(test_all, test_data)
+}
+
+
+```
+
+And after let's see what our metrics are:
+
+```{r}
+library(Metrics)
+
+metric_out <- function(cluster, train_observed, trained_predicted, test_observed, test_predicted){
+  
+  
+  metrics_results <- data.frame(matrix(nrow = 0, ncol = 6))
+  colnames(metrics_results) <- c("Cluster", "Train_or_Test", "MSE", "RMSE", "MAE", "R_2")
+
+  mse_train <- mse(train_observed, trained_predicted)
+  rmse_train <- rmse(train_observed, trained_predicted)
+  mae_train <- mae(train_observed, trained_predicted)
+  r2_train <- cor(train_observed, trained_predicted)^2
+
+  mse_test <- mse(test_observed, test_predicted)
+  rmse_test <- rmse(test_observed, test_predicted)
+  mae_test <- mae(test_observed, test_predicted)
+  r2_test <- cor(test_observed, test_predicted)^2
+
+  #print("Train")
+  #print(paste(mse_train, rmse_train, mae_train, r2_train))
+  
+  #print("Test")
+  #print(paste(mse_test, rmse_test, mae_test, r2_test))
+
+  metrics_results <- rbind(metrics_results, data.frame(Cluster = cluster, Train_or_Test="Train", MSE=mse_train, RMSE=rmse_train, MAE=mae_train, R_2=r2_train))
+  metrics_results <- rbind(metrics_results, data.frame(Cluster = cluster, Train_or_Test="Test", MSE=mse_test, RMSE=rmse_test, MAE=mae_test, R_2=r2_test))
+  
+  return(metrics_results)
+}
+
+#print(metric_out(cluster=4, train_data$Value, train_data$LR, test_data$Value, test_data$LR))
+```
+
+```{r}
+library(dplyr)
+
+metrics_all <- data.frame() 
+
+metric_out_all_clusters <- function(train_all, test_all){
+  clusters <- unique(train_all$Cluster) 
+  
+  for ( c in clusters){
+    print(paste("Cluster", c))
+    train_c <- subset(train_all, Cluster == c)
+    test_c <- subset(test_all, Cluster == c)
+    
+    col_names <- colnames(train_c)[4:length(colnames(train_c))]
+    for (col in col_names){
+      print(col)
+      #print(class(lapply(train_c[col], as.numeric)))
+      #print(class(train_c$Value))
+      m <- metric_out(c,train_c$Value, train_c[[col]], test_c$Value, test_c[[col]])
+      #print(m)
+      m <- cbind(data.frame(Method = col), m)
+      metrics_all <- rbind(metrics_all, m)
+    }
+  }
+  return(metrics_all)
+}
+
+res <- metric_out_all_clusters(train_all, test_all)
+print(res)
+```
+
+```{r}
+library(ggplot2)
+
+# Assuming 'train_data' and 'test_data' are your dataframes
+combined_data <- rbind(transform(train_data, Dataset = "Train"),
+                       transform(test_data, Dataset = "Test"))
+
+# Plotting
+ggplot(combined_data, aes(x = Year, y = Value, color = Dataset)) +
+  geom_line(aes(linetype = "Actual"), linewidth = 1) +
+  geom_line(aes(y = LR, linetype = "LR"), linewidth = 1) +
+  labs(title = "Comparison of Actual and LR Predictions",
+       x = "Year",
+       y = "Value") +
+  scale_linetype_manual(name = "Dataset", values = c("Actual" = 1, "LR" = 2)) +
+  scale_color_manual(name = "Dataset", values = c("Train" = "blue", "Test" = "red"))
+
+```
+
+bnsdnlbknblanb
+
+```{r}
+# Convert Date column to a proper date format
+#subset_data$Date <- as.Date(subset_data$Date)
+
+# Get unique countries in Europe from your dataset
+european_countries <- unique(subset_data$Area)
+
+# Loop through each European country and create plots
+for (country in european_countries) {
+  # Subset the data for the current country
+  ts_data <- ts(subset_data[subset_data$Area == country, "Value"])
+
+  # Plot the autocorrelation using the acf function
+  acf(ts_data, main = paste("Autocorrelation for", country))
+
+  # Plot the time series
+  plot(ts_data, main = paste("Time Series for", country), xlab = "Date", ylab = "Demand")
+}
+
+```
+
+## Forecasting for each country separately
+
+```{r}
+
+```
+
+### Example analysis of one country(Austria)
+
+Before doing analysis for each country let's chose one of them and make analysis for it. For instance lets take only demand electricity for Austria and make some visualization.
+
+```{r}
+data_Austria <- subset(data_eu, Area == "Austria")
+head(data_Austria)
+
+demand_energy_Austria <- subset(data_Austria, Variable == "Demand")
+head(demand_energy_Austria)
+
+ggplot(demand_energy_Austria, aes(x = Year, y = Value)) +
+  geom_point(color="seagreen") +
+  geom_line(color = "seagreen", linetype = "solid", size = 0.5)+
+  labs(title = "Time Series plot for electricity Demand Austria", x = "Year", y = "Demand(TWh)")
+```
+
+#### Linear regression for an example
+
+##### Simple Linear Regression
+
+Let's apply linear regression for this time series data.
+
+```{r}
+# Fit a linear regression model
+model_slr <- lm(Value ~ Year, data = demand_energy_Austria)
+
+# Display the summary of the linear regression model
+summary(model_slr)
+
+# Visualize the data with the regression line
+ggplot(demand_energy_Austria, aes(x = Year, y = Value)) +
+  geom_line(color = "seagreen", size = 0.25) +
+  geom_smooth(method = "lm", se = FALSE, color = "#D0E513", size = 0.5) +
+  labs(title = "Time Series Plot with Linear Regression Line", x = "Year", y = "Value")
+
+
+```
+
+In summary, from the linear regression model we can say that there are statistically significant relationship between 'Year' and 'Value', and the linear regression model explains a substantial amount of the variability in 'Value'. We can also see that both coefficients Intercept and Year are quite important, as their p-value is very small. R-squared is 0.8394 which means that approximately 83.94% of the variability in 'Value' is explained by 'Year'. F-statistics is 109.8 and p-value is 8.499e-10 indicate that the overall model is statistically significant.
+
+```{r}
+tt<- 1:NROW(demand_energy_Austria)
+
+# Fit a linear regression model
+model_slr_tt <- lm(Value ~ tt, data = demand_energy_Austria)
+
+# Display the summary of the linear regression model
+summary(model_slr_tt)
+
+# Visualize the data with the regression line
+ggplot(demand_energy_Austria, aes(x = tt, y = Value)) +
+  geom_line(color = "seagreen", size = 0.25) +
+  geom_smooth(method = "lm", se = FALSE, color = "#D0E513", size = 0.5) +
+  labs(title = "Time Series Plot with Linear Regression Line", x = "Year", y = "Value")
+```
+
+##### Residual analysis
+
+```{r}
+ggAcf(demand_energy_Austria$Year, demand_energy_Austria$Value, color = "seagreen") +
+  geom_line(color = "seagreen", size = 0.25) 
+
+  
+```
+
+```{r}
+
+##check the residuals? are they autocorrelated? Test of DW
+dwtest(model_slr)
+
+# Assuming 'model_slr' is out linear regression model
+res_model_slr <- residuals(model_slr)
+
+# Create a data frame for ggplot
+residual_df <- data.frame(Time = 1:length(res_model_slr), Residuals = res_model_slr)
+
+# Create a residual plot with ggplot
+ggplot(residual_df, aes(x = Time, y = Residuals)) +
+  geom_point(color = "seagreen", size = 1.5) +
+  geom_line(color = "seagreen", size = 0.5)+
+  geom_hline(yintercept = 0, linetype = "dashed", color = "#FC7E08", size = 1.0) +
+  labs(title = "Residual Plot", x = "Time", y = "Residuals")
+  
+
+```
+
+The test statistic for Durbin-Watson is less than 2, indicating the possibility of positive autocorrelation. p-value is very small, suggesting that the autocorrelation is significantly different from zero.
+
+Based on the Durbin-Watson test, there is evidence to suggest that there is positive autocorrelation in the residuals for simple linear regression model. This means that the residuals are not independent, and there is some systematic pattern or correlation between them.
+
+Also plot doesn't show confident independence between measures. It has more "parabolic" form and therefore we cannot conclude that model fit the data.
+
+##### Time-Series Linear Regression
+
+From previous step we concluded that simple linear regression doesn't fir data, therefore let's try time-series linear regression.
+
+```{r}
+##let us do the same with a linear model for time series, so we transform the data into a 'ts' object
+model_tslr <- ts(demand_energy_Austria$Value, frequency = 1)
+plot(model_tslr, type="o")
+
+## we fit a linear model with the tslm function
+fitts<- tslm(model_tslr~trend)
+
+###obviously it gives the same results of the first model
+summary(fitts)
+
+dwtest(fitts)
+```
+
+##### Log-transformation and Linear Regression
+
+Let's try to apply log transformation to our data and to see how it will change the result
+
+```{r}
+
+model_tslr_log <- ts(log(demand_energy_Austria$Value), frequency = 1)
+plot(model_tslr_log, type="o")
+
+## we fit a linear model with the tslm function
+fitts_log<- tslm(model_tslr_log~trend)
+
+###obviously it gives the same results of the first model
+summary(fitts_log)
+
+dwtest(fitts_log)
+```
+
+##### Bass Model
+
+```{r}
+# Fit the Bass model
+bass_model <- BASS.fit(demand_energy_Austria$Value, time = demand_energy_Austria$Year)
+
+# Display the fitted Bass model parameters
+summary(bass_model)
+
+# Predict the adoption using the fitted Bass model
+adoption_predictions <- predict(bass_model, newdata = data.frame(Time = your_data$Time))
+
+# Plot the adoption curve
+plot(your_data$Time, your_data$Adoption, type = "l", col = "blue", lwd = 2, xlab = "Time", ylab = "Adoption")
+lines(your_data$Time, adoption_predictions$Predicted, col = "red", lty = 2, lwd = 2)
+legend("topleft", legend = c("Observed", "Predicted"), col = c("blue", "red"), lty = c(1, 2), lwd = 2)
+```
+
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
+
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\--
+
+Below is colours we can use. They are pretty nice 🟡🟢
+
+```{r}
+
+#this is very beutifull palett for our plots(yellow and seagreen)
+
+# Create a color palette from yellow to seagreen
+yellow_to_seagreen <- colorRampPalette(c("yellow", "seagreen"))
+
+# Generate a vector of colors from the palette
+num_colors <- 10  # Adjust the number of colors as needed
+color_vector <- yellow_to_seagreen(num_colors)
+
+# Display the colors
+print(color_vector)
+
+# Plot a gradient using the colors
+=======
+# Assuming 'your_data' is your dataset
+renewableGrowth <- RenewDataset %>%
+  group_by(Area) %>%
+  summarise(renewable_growth = last(Value) - first(Value)) %>%
+  arrange(desc(renewable_growth)) %>%  # Sort in descending order based on renewable growth
+  top_n(20, wt = renewable_growth)
+
+# 'renewableGrowth' now contains the top 20 countries with the highest renewable growth.
+# 'your_data' now contains the top 10 countries with the highest renewable growth.
+renewableGrowth
+```
+
+```{r}
+
+
+# Assuming 'your_data' is your dataset
+averageRenewable <- RenewDataset %>%
+  group_by(Area) %>%
+  summarise(average_renewable = mean(Value)) %>%
+  arrange(desc(average_renewable)) %>%  # Sort in descending order based on average renewable energy
+  top_n(20, wt = average_renewable)
+
+averageRenewable 
+
+```
+
+```{r}
+
+
+library(ggplot2)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Variable == "Renewables" & Category == "Electricity generation" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+RenewDataset <- RenewDataset[complete.cases(RenewDataset$Area), ]
+
+
+# Assuming 'dataset_Demand' contains the filtered data
+
+# Perform k-means clustering based on the 'Value' column
+k <- 3  # Set the number of clusters
+clustering_data <- kmeans(RenewDataset$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+RenewDataset$Cluster <- as.factor(clustering_data$cluster[match(RenewDataset$Area, RenewDataset$Area)])
+
+# Convert Date column to a proper date format
+RenewDataset$Date <- as.Date(RenewDataset$Date)
+
+
+# Plotting monthly demand for each country over time
+ggplot(RenewDataset, aes(x = Date, y = Value, color = Cluster)) +
+  geom_line() +
+  labs(title = "Monthly Renewables for Each Country Over Time", x = "Date", y = "Renewables") +
+  theme_minimal()
+
+Cluster1Dataset <- RenewDataset %>%
+  filter(Cluster == 1)
+
+Cluster2Dataset <- RenewDataset %>%
+  filter(Cluster == 2)
+
+Cluster3Dataset <- RenewDataset %>%
+  filter(Cluster == 3)
+
+
+ts_data1 <- ts(Cluster1Dataset$Value, start = c(year(min(Cluster1Dataset$Date)), month(min(Cluster1Dataset$Date))),
+                end = c(year(max(Cluster1Dataset$Date)), month(max(Cluster1Dataset$Date))), frequency = 12)
+
+ts_data2 <- ts(Cluster2Dataset$Value, start = c(year(min(Cluster2Dataset$Date)), month(min(Cluster2Dataset$Date))),
+                end = c(year(max(Cluster2Dataset$Date)), month(max(Cluster2Dataset$Date))), frequency = 12)
+
+ts_data3 <- ts(Cluster3Dataset$Value, start = c(year(min(Cluster3Dataset$Date)), month(min(Cluster3Dataset$Date))),
+                end = c(year(max(Cluster3Dataset$Date)), month(max(Cluster3Dataset$Date))), frequency = 12)
+
+
+
+
+```
+
+```{r}
+
+library(forecast)
+
+# Assuming your dataset is named 'your_dataset'
+data<- data %>%
+  filter(!grepl("%", Unit))
+
+# Now, 'your_dataset' contains rows without "%" in the 'Unit' column
+
+# Assuming 'dataset_Demand' contains the filtered data
+RenewDataset <- data %>%
+  filter(Variable == "Renewables" & Category == "Electricity generation" & EU == "1")
+
+# Assuming your dataset is named 'your_dataset'
+RenewDataset <- RenewDataset[complete.cases(RenewDataset$Area), ]
+
+
+# Assuming 'Date', 'Country', and 'Demand' are your column names
+# Convert 'Date' to a proper date format
+RenewDataset$Date <- ymd( RenewDataset$Date)
+
+# Create time series for each country
+unique_countries <- unique(RenewDataset$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- RenewDataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+}
+
+
+
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggseasonplot(time_series_data[[country]], year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Renewable Energy") +
+  ggtitle("Seasonal plot:",country))
+}
+
+```
+
+```{r}
+
+library(forecast)
+#### check the pattern of seasonality here and the amout of consumoption ##yearly
+# Loop through each European country and create plots
+for (country in names(time_series_data)) {
+  # Plot polar seasonal plot
+  print(ggseasonplot(time_series_data[[country]], polar = TRUE) +
+    ylab("Demand") +
+    ggtitle(paste("Polar seasonal plot:", country)))
+}
+
+```
+
+```{r}
+
+library(forecast)
+library(ggplot2)
+
+# Assuming 'your_dataset' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Assuming 'Date', 'Country', and 'Demand' are your column names
+# Convert 'Date' to a proper date format
+RenewDataset$Date <- ymd( RenewDataset$Date)
+
+# Create time series for each country
+unique_countries <- unique(RenewDataset$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- RenewDataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+
+
+  # Apply STL decomposition
+  stl_result <- stl(ts_data, s.window = "periodic")
+
+  # Plot the decomposed components
+  plot(stl_result, main = paste("STL Decomposition -", country))
+}
+```
+
+```{r}
+library(forecast)
+library(ggplot2)
+
+# Assuming 'your_dataset' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Assuming 'Date', 'Country', and 'Demand' are your column names
+# Convert 'Date' to a proper date format
+RenewDataset$Date <- ymd( RenewDataset$Date)
+
+# Create time series for each country
+unique_countries <- unique(RenewDataset$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- RenewDataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+
+  # Apply Moving Average (MA) with a window of your choice (e.g., 12 for monthly data)
+  ma_result <- ma(ts_data, order = 12)
+  
+  # Plot the original time series and the MA result
+  plot(ts_data, main = paste("Original Time Series vs. Moving Average for", country),
+       sub = "Moving Average (MA) with a window of 12 months", col = "black")
+  lines(ma_result, col = "red")
+  legend("topright", legend = c("Original", "Moving Average"), col = c("black", "red"), lty = 1:1)
+}
+```
+
+```{r}
+
+library(forecast)
+library(ggplot2)
+
+# Assuming 'your_dataset' contains the filtered data with 'Date', 'Value', and 'Area' columns
+
+# Assuming 'Date', 'Country', and 'Demand' are your column names
+# Convert 'Date' to a proper date format
+RenewDataset$Date <- ymd( RenewDataset$Date)
+
+# Create time series for each country
+unique_countries <- unique(RenewDataset$Area)
+time_series_data <- list()
+
+for (country in unique_countries) {
+  country_data <- RenewDataset %>% filter(Area == country) %>% select(Date, Value)
+  
+  # Create time series object
+  ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+  
+  # Assign the time series object to a list with the country name
+  time_series_data[[country]] <- ts_data
+
+  # Apply STL decomposition
+  stl_result <- stl(ts_data, s.window = "periodic")
+  
+    # Plot the time series components with labels adjusted to your dataset
+  print(autoplot(ts_data , series="Data") +
+    autolayer(trendcycle(stl_result), series="Trend") +
+    autolayer(seasadj(stl_result), series="Seasonally Adjusted") +
+    xlab("Year") +
+    ylab("Moving Average") +
+    ggtitle(paste("Electricity Generation", country)) +
+    scale_colour_manual(values=c("gray","blue","red"),
+               breaks=c("Data","Seasonally Adjusted","Trend")))
+  
+
+}
+```
+
+```{r}
+
+# Get unique countries in Europe from your dataset
+unique_countries <- unique(RenewDataset$Area)
+
+# Loop through each European country and create plots
+for (country in european_countries) {
+  # Subset the data for the current country
+  ts_data <- ts(RenewDataset[RenewDataset$Area == country, "Value"])
+
+  # Plot the autocorrelation using the acf function
+  acf(ts_data, main = paste("Autocorrelation for", country))
+
+  # Plot the time series
+  plot(ts_data, main = paste("Time Series for", country), xlab = "Date", ylab = "Wind and Solar Electricity Generation")
+}
+
+
+```
+
+```{r}
+
+diff1<- diff(ts_data1, lag=12)
+diff2<- diff(ts_data2, lag=12)
+diff3<- diff(ts_data3, lag=12)
+
+fit1<- ses(diff1,alpha= 0.8, h=5)
+fit2<- ses(diff2,alpha=0.8, h=5)
+fit3<- ses(diff3,alpha=0.8, h=5)
+
+
+plot(diff1, ylab="Monthly Electricity Generation", xlab="Year")
+lines(fitted(fit1), col="blue", type="o")
+
+plot(diff2, ylab="Monthly Electricity Generation", xlab="Year")
+lines(fitted(fit2), col="blue", type="o")
+
+plot(diff3, ylab="Monthly Electricity Generation", xlab="Year")
+lines(fitted(fit3), col="blue", type="o")
+
+
+summary(fit1)
+
+```
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+checkresiduals(fit3)
+
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- tslm(ts_data1 ~ trend + season)
+model2 <- tslm(ts_data2 ~ trend + season)
+model3 <- tslm(ts_data3 ~ trend + season)
+model4 <- tslm(ts_data4 ~ trend + season)
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model3), col="blue")
+
+plot(ts_data4, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model4), col="blue")
+
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+
+```
+
+```{r}
+
+arr1 <- auto.arima(residuals(model1))
+arr2 <- auto.arima(residuals(model2))
+arr3 <- auto.arima(residuals(model3))
+
+
+plot(ts_data1, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model1)+fitted(arr1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model2)+fitted(arr2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model3)+fitted(arr3), col="blue")
+
+
+```
+
+```{r}
+##plot of the model
+# Assuming 'ts_data' is your time series object
+model1 <- auto.arima(ts_data1)
+model2 <- auto.arima(ts_data2)
+model3 <- auto.arima(ts_data3)
+
+
+# Print the model summary
+summary(model1)
+
+
+plot(ts_data1, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model1), col="blue")
+
+plot(ts_data2, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model2), col="blue")
+
+plot(ts_data3, xlab="Time", ylab="Monthly Electricity Generation")
+lines(fitted(model3), col="blue")
+
+
+```
+
+```{r}
+checkresiduals(model1)
+checkresiduals(model2)
+checkresiduals(model3)
+
+```
+
+```{r}
+fc1<- holt(diff1, h=15)
+fc1_2<- holt(diff1, damped=T, phi=0.9, h=15)
+
+fc2 <- holt(diff2, h=15)
+fc2_2<- holt(diff2, damped=T, phi=0.9, h=15)
+
+fc3<- holt(diff3, h=15)
+fc3_2<- holt(diff3, damped=T, phi=0.9, h=15)
+
+
+autoplot(diff1)+
+autolayer(fc1, series="Holt's method", PI=F)+
+autolayer(fc1_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff2)+
+autolayer(fc2, series="Holt's method", PI=F)+
+autolayer(fc2_2, series="Damped Holt's method", PI=F)
+
+autoplot(diff3)+
+autolayer(fc3, series="Holt's method", PI=F)+
+autolayer(fc3_2, series="Damped Holt's method", PI=F)
+
+
+
+```
+
+```{r}
+
+checkresiduals(fc1_2)
+checkresiduals(fc2_2)
+checkresiduals(fc3_2)
+
+```
+
+```{r}
+checkresiduals(fc1)
+checkresiduals(fc2)
+checkresiduals(fc3)
+
+```
+
+```{r}
+
+MEG1<- window(ts_data1, start=2015)
+fit11<- hw(MEG1, seasonal="additive")
+fit12<- hw(MEG1, seasonal="multiplicative")
+
+MEG2<- window(ts_data2, start=2015)
+fit21<- hw(MEG2, seasonal="additive")
+fit22<- hw(MEG2, seasonal="multiplicative")
+
+MEG3<- window(ts_data3, start=2015)
+fit31<- hw(MEG3, seasonal="additive")
+fit32<- hw(MEG3, seasonal="multiplicative")
+
+MEG4<- window(ts_data4, start=2015)
+fit41<- hw(MEG4, seasonal="additive")
+
+
+autoplot(MEG1)+
+autolayer(fit11, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit12, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MEG2)+
+autolayer(fit21, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit22, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MEG3)+
+autolayer(fit31, series="Holt-Winters' method(additive)", PI=F)+
+autolayer(fit32, series="Holt-Winters' method(multiplicative)", PI=F)
+
+autoplot(MEG4)+
+autolayer(fit41, series="Holt-Winters' method(additive)", PI=F)
+
+```
+
+```{r}
+checkresiduals(fit11)
+checkresiduals(fit21)
+checkresiduals(fit31)
+checkresiduals(fit41)
+```
+
+```{r}
+checkresiduals(fit12)
+checkresiduals(fit22)
+checkresiduals(fit32)
+
+```
+
+```{r}
+
+library(ggplot2)
+#Power sector emissions
+#Total
+
+# Assuming 'dataset_Demand' contains the filtered data
+your_dataset <- data %>%
+  filter(Category == "Electricity prices" & EU == "1")
+
+
+# Convert Date column to a proper date format
+your_dataset$Date <- as.Date(your_dataset$Date)
+
+
+# Plotting monthly demand for each country over time
+ggplot(your_dataset, aes(x = Date, y = Value, color = Area)) +
+  geom_line() +
+  labs(title = "Monthly Electricity prices for Each Country Over Time", x = "Date", y = "Electricity price") +
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+
+
+# Assuming 'your_data' is your dataset
+renewableGrowth <- your_dataset %>%
+  group_by(Area) %>%
+  summarise(renewable_growth = last(Value) - first(Value)) %>%
+  arrange(desc(renewable_growth)) %>%  # Sort in descending order based on renewable growth
+  top_n(25, wt = renewable_growth)
+
+# 'renewableGrowth' now contains the top 20 countries with the highest renewable growth.
+# 'your_data' now contains the top 10 countries with the highest renewable growth.
+renewableGrowth
+```
+
+```{r}
+
+library(dplyr)
+
+
+# Assuming 'your_data' is your dataset
+averageRenewable <- your_dataset %>%
+  group_by(Area) %>%
+  summarise(average_renewable = mean(Value)) %>%
+  arrange(desc(average_renewable)) %>%  # Sort in descending order based on average renewable energy
+  top_n(25, wt = average_renewable)
+
+averageRenewable 
+
+```
+
+```{r}
+library(seasonal)
+
+# Assuming 'time_series_data' is a list containing time series data for different countries
+library(dplyr)
+
+# Create time series for each country
+unique_countries <- unique(your_dataset$Area)
+time_series_data <- list()
+
+# Now 'your_dataset' does not contain rows with NA values in the "Area" column
+your_dataset <- your_dataset[complete.cases(your_dataset$Area), ]
+
+
+# Perform k-means clustering based on the 'Value' column
+k <- 1  # Set the number of clusters
+clustering_data <- kmeans(your_dataset$Value, centers = k)
+
+# Add the cluster assignments to the original dataset
+your_dataset$Cluster <- as.factor(clustering_data$cluster[match(your_dataset$Area, your_dataset$Area)])
+
+    # Subset the data for the current country
+country_data <- your_dataset[your_dataset$Area == "Netherlands", ]
+
+  # Create a time series object
+ts_data <- ts(country_data$Value, start = c(year(min(country_data$Date)), month(min(country_data$Date))),
+                end = c(year(max(country_data$Date)), month(max(country_data$Date))), frequency = 12)
+
+
+# Perform X11 decomposition for Austria
+stl_result <- stl(ts_data, s.window = "periodic") # Plot the STL decomposition
+autoplot(stl_result) +
+  ggtitle("STL Decomposition of Your Dataset") +
+  xlab("Time") +
+  ylab("Monthly Electricity prices")
+
+# Plot the time series components with labels adjusted to your dataset
+autoplot(ts_data, series="Data") +
+  autolayer(trendcycle(stl_result), series="Trend") +
+  autolayer(seasadj(stl_result), series="Seasonally Adjusted") +
+  xlab("Year") +
+  ylab("Electricity price") +
+  ggtitle("Monthly Electricity prices") +
+  scale_colour_manual(values=c("gray","blue","red"),
+             breaks=c("Data","Seasonally Adjusted","Trend"))
+
+
+
+```
+
+```{r}
+# Assuming 'ts_data' is your time series object
+model <- tslm(ts_data ~ trend + season)
+
+# Print the model summary
+summary(model)
+
+```
+
+```{r}
+##plot of the model
+plot(ts_data, xlab="Time", ylab="Electricity Price")
+lines(fitted(model), col="blue")
+
+```
+
+```{r}
+diff1<- diff(log(ts_data), lag=1) 
+tsdisplay(diff1)
+
+```
+
+```{r}
+library(tseries)
+
+adf_test <- adf.test(diff1)
+print(adf_test)
+```
+
+```{r}
+fit1<- ses(diff1, alpha=0.3, initial="simple", h=5)
+fit2<- ses(diff1, alpha=0.6, initial="simple", h=5)
+fit3<- ses(diff1,alpha=0.8, initial="simple", h=5)
+
+plot(diff1, ylab="Electricity-Price", xlab="Year")
+lines(fitted(fit1), col="blue", type="o")
+lines(fitted(fit2), col="red", type="o")
+lines(fitted(fit3), col="green", type="o")
+
+```
+
+```{r}
+expModel <- fit2<- ses(diff1, alpha=0.8, initial="simple", h=5)
+round(accuracy(expModel), 2)
+
+summary(expModel)
+
+autoplot(expModel)+
+autolayer(fitted(expModel), series="Fitted")+ylab("Electricity Price ")+xlab("Year")
+
+
+```
+
+```{r}
+res_exp_model <- residuals(expModel)
+plot(res_exp_model)
+
+#####analysis of residuals: autocorrelation? 
+tsdisplay(res_exp_model)
+Acf(res_exp_model)
+```
+
+```{r}
+Box.test(res_exp_model, type="Ljung-Box")
+```
+
+```{r}
+checkresiduals(expModel)
+```
+
+```{r}
+
+ElecPrice<- diff(log(ts_data),1)
+fc<- holt(ElecPrice, h=15)
+fc2<- holt(ElecPrice, damped=T, phi=0.9, h=15)
+
+autoplot(ElecPrice)+
+autolayer(fc, series="Holt's method", PI=F)+
+autolayer(fc2, series="Damped Holt's method", PI=F)+
+autolayer(fitted(fc), series="Holt's method")+
+autolayer(fitted(fc2), series="Damped Holt's method")
+
+
+
+```
+
+```{r}
+
+checkresiduals(fc)
+checkresiduals(fc2)
+
+
+```
+
+```{r}
+aust<- window(ts_data, start=2015)
+autoplot(aust)
+
+fit1<- hw(aust, seasonal="additive")
+fit2<- hw(aust, seasonal="multiplicative")
+
+autoplot(aust)+
+autolayer(fitted(fit1), series="Holt-Winters' method(additive)")+
+autolayer(fitted(fit2), series="Holt-Winters' method(multiplicative)")+
+autolayer(fit1, series="Holt-Winters' method(additive)")+
+autolayer(fit2, series="Holt-Winters' method(multiplicative)")
+  
+
+
+```
+
+```{r}
+checkresiduals(fit1)
+checkresiduals(fit2)
+
+```
+
+```{r}
+Data<- window(ts_data, start=2015)
+autoplot(Data)
+
+model<- auto.arima(Data)
+
+
+autoplot(Data)+
+autolayer(fitted(model), series="Auto Arima Model")
+
+
+```
+
+```{r}
+checkresiduals(model)
+```
+
+```{r}
+
+library(sm)
+
+
+
+
+sm.regression(x = time(ts_data), y = ts_data,   h = 30)
+
+#increase the number of points where the function is calculated
+model <-sm.regression(x = time(ts_data), y = ts_data,   h = 1, add = T, ngrid=200, col=2)
+
+
+
+#We try with different values for h
+#increasing the value of h we have a smoother function, a lower value of h implies a jumpy function
+
+sm.regression(x = time(ts_data), y = ts_data,   h = 50, ngrid=200, col=1)
+sm.regression(x = time(ts_data), y = ts_data,   h = 30, add = T, ngrid=200, col=2)
+sm.regression(x = time(ts_data), y = ts_data,   h = 5,  add = T, ngrid=200, col=3)
+sm.regression(x = time(ts_data), y = ts_data,   h = 1,  add = T, col=3, ngrid=200)
+
+
+```
+
+```{r}
+#Loess (no library required, default tool of R)
+plot(ts_data)
+#plot(x = time(ts_data), y = ts_data, xlab="engine size", ylab="distance")
+lo1 <- loess.smooth(x = time(ts_data), y = ts_data) 
+#default span= 0.75
+lines(lo1)
+# we try with other smoothing parameters 'span' 
+lo2 <- loess.smooth(x = time(ts_data), y = ts_data,span=0.9)
+lines(lo2,col=2)
+lo3 <- loess.smooth(x = time(ts_data), y = ts_data,span=0.4)
+lines(lo3,col=3)
+
+
+```
+
+```{r}
+scatter.smooth(x = time(ts_data), y = ts_data) 
+scatter.smooth(x = time(ts_data), y = ts_data, span=0.3)
+scatter.smooth(x = time(ts_data), y = ts_data, span=0.25, evaluation=200)
+
+
+```
+
+```{r}
+library(splines)
+#
+plot(ts_data, xlab="Time", ylab="Electricity-Price")
+#
+#we select and identify the knots 'equispaced'
+xi<-seq(min(time(ts_data)), max(time(ts_data)), length=4)
+
+#----- Model (2 internal knots)
+m1<-lm(ts_data ~ bs(x=time(ts_data), knots=xi[2:(length(xi)-1)], degree=3))
+
+###---- for graphical reasons select 200 points where to evaluate the model
+xxx<-seq(min(time(ts_data)),max(time(ts_data)),length=106)
+
+#Make predictions by using the 'xxx' points
+fit1<-predict(m1, data.frame(x=xxx))
+#########
+plot(ts_data,xlab="time", ylab="Monthly Electricity Price")
+lines(xxx,fit1,col=2)
+
+######vertical lines to indicate the knots
+abline(v=xi[2], lty=3)
+abline(v=xi[3], lty=3)
+abline(v=xi[4], lty=3)
+abline(v=xi[1], lty=3)
+
+```
+
+```{r}
+#we may select the knots by using the degrees of freedom
+#
+#basic functions b-spline for a cubic spline (degree=3)
+#df directly related to the number of knots
+#df=length(knots) + degree 
+#The knots are selected by using the quantiles of 'x' distribution 
+
+plot(ts_data,xlab="time", ylab="Electricity-Price")
+
+# first model with 2 internal knots
+m1<-lm(ts_data~bs(time(ts_data), df=5, degree=3)) 
+fit1<-predict(m1, data.frame(x=xxx))
+lines(xxx,fit1,col=4)
+#
+# second model with no internal knots 
+m2 <- lm(ts_data ~ bs(time(ts_data), df=3, degree=3)) 
+fit2<-predict(m2,data.frame(x=xxx))
+#plot(x,y,xlab="engine size", ylab="distance")
+lines(xxx,fit2,col=3)
+#
+# Third model with 17 knots 
+m3<-lm(ts_data~bs(time(ts_data),df=20,degree=3))
+fit3<-predict(m3,data.frame(x=xxx))
+#plot(x,y,xlab="engine size", ylab="distance")
+lines(xxx,fit3,col=2)
+#
+
+```
+
+```{r}
+#Smoothing splines (no library required, default tool)
+
+plot(ts_data,xlab="engine size", ylab="Monthly Electricity Price")
+s <- smooth.spline(time(ts_data),ts_data)
+lines(s)
+
+# Model 1
+plot(ts_data,xlab="engine size", ylab="Monthly Electricity Price")
+s1 <- smooth.spline(time(ts_data),ts_data, lambda=0.0001)
+lines(s1)
+#
+p1<- predict(s1, x=xxx)
+lines(p1, col=2)
+#
+# Model 2
+s2 <- smooth.spline(time(ts_data),ts_data, lambda=0.00001)
+p2<- predict(s2, x=xxx)
+lines(p2, col=3)
+#
+# Model 3
+s3 <- smooth.spline(time(ts_data),ts_data, lambda=0.01)
+p3<- predict(s3, x=xxx)
+lines(p3, col=4)
+
+# Model 4
+s4 <- smooth.spline(time(ts_data),ts_data, lambda=1)
+p4<- predict(s4, x=xxx)
+lines(p4, col=4)
+
+# Model 5
+s5 <- smooth.spline(time(ts_data),ts_data, lambda=0.00000001)
+p5<- predict(s5, x=xxx)
+lines(p5, col=4)
+
+
+```
+
+```{r}
+# Install and load the required package
+library(gam)
+library(mgcv)
+# Assuming ts_data is your time series data
+# Convert Date to numeric for the sake of simplicity
+
+# Fit a GAM model
+# Assuming ts_data is your time series object
+# Create a data frame for the GAM model
+df <- data.frame(Date = time(ts_data), Value = as.numeric(ts_data))
+
+# Fit a GAM model
+gam_model <- gam(Value ~ s(Date), data = df)
+
+# Summary of the model
+summary(gam_model)
+
+# Plot the model
+# Model 1
+plot(gam_model, residuals = TRUE, pch = 16, col = "blue")
+
+```
+
+```{r}
+# Create a data frame for the GAM model
+df <- data.frame(Date = time(ts_data), Value = as.numeric(ts_data))
+
+# Fit a GAM model
+gam_model <- gam(Value ~ s(Date), data = df)
+
+# Extract residuals from the GAM model
+gam_residuals <- residuals(gam_model)
+
+# Fit an ARIMA model to the residuals
+aarima_model <- auto.arima(gam_residuals)
+
+# Combine fitted values from ARIMA and GAM
+fitted_values <- fitted(gam_model) + fitted(aarima_model)
+
+# Plot the original time series data in blue
+plot( as.numeric(df$Value), main = "Monthly Electricity Price", type = 'l')
+
+# Plot the GAM fitted values in red
+lines(fitted(gam_model), col = 'red')
+
+# Plot the sum of GAM and ARIMA fitted values in green
+lines(fitted_values, col = 'blue')
+summary(gam_model)
+
+```
+
+```{r}
+# Mean Squared Error (MSE)
+mse <- mean((as.numeric(df$Value) - fitted_values)^2)
+
+# Root Mean Squared Error (RMSE)
+rmse <- sqrt(mse)
+
+# Mean Absolute Error (MAE)
+mae <- mean(abs(as.numeric(df$Value) - fitted(gam_model))^2)
+
+# Mean Absolute Percentage Error (MAPE)
+mape <- mean(abs((as.numeric(df$Value) - fitted_values) /as.numeric(df$Value)) * 100)
+
+mse
+mae
+```
+
+```{r}
+# Assuming 'observed' is your observed values and 'predictors' are your predictor variables
+# Create a data frame for the GAM model
+df <- data.frame(Date = time(ts_data), Value = as.numeric(ts_data))
+
+
+# Install and load the gbm package if not already installed
+if (!requireNamespace("gbm", quietly = TRUE)) {
+  install.packages("gbm")
+}
+library(gbm)
+
+# Create a data frame for the GAM model
+df <- data.frame(Date = time(ts_data), Value = as.numeric(ts_data))
+
+
+# Fit a GBM model to the residuals
+gbm_model <- gbm(Value ~ Date, data = df, distribution = "gaussian", n.trees = 100, interaction.depth = 3,shrinkage=0.01)
+
+# Predict using the GBM model
+gbm_preds <- predict(gbm_model, newdata = df, n.trees = 100)
+# Extract residuals from the GAM model
+
+
+# Combine fitted values from GAM and GBM
+fitted_values <- fitted(gam_model) 
+
+# Evaluate the combined model
+observed <- df$Value
+
+# Mean Squared Error (MSE)
+mse <- mean((observed - gbm_preds)^2)
+
+# Root Mean Squared Error (RMSE)
+rmse <- sqrt(mse)
+
+# Mean Absolute Error (MAE)
+mae <- mean(abs(observed - fitted_values))
+
+# Mean Absolute Percentage Error (MAPE)
+mape <- mean(abs((observed - fitted_values) / observed) * 100)
+
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse, "\n")
+cat("Mean Absolute Error (MAE):", mae, "\n")
+cat("Mean Absolute Percentage Error (MAPE):", mape, "%\n")
+
+plot( as.numeric(df$Value), main = "Monthly Electricity Price", type = 'l')
+lines(fitted_values, col = 'red')
+
+```
+
+# 
