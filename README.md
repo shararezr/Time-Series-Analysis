@@ -63,6 +63,8 @@ The dataset requires significant data cleaning and adjustment, as raw data is pr
 
 1. Clone the repository:
 
+1. **Clone the repository:**
+
    ```bash
-   git clone https://github.com/SkurativskaKateryna/BEFD_2023.git
-   cd BEFD_2023
+   git clone https://github.com/shararezr/Time-Series-Analysis.git
+   cd Time-Series-Analysis
