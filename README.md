@@ -1,50 +1,231 @@
-The project is made in R-Studio. The result will be a simple markdown file. We aim to analyze renewable energies in the EU. Check how production and consumption change over time for different countries and different resources. How does it influence the price and CO2 emission?
+# Triangle Counting in Spark
 
-Introduction: We aim to analyze energy consumption, especially renewable energies, and how it changes over the years. We limit our analysis only for EU area, as it has more information about renewable energies than any other area. Our plan is to try to answer the following questions:
+![Python](https://img.shields.io/badge/language-python-blue.svg)
+![PySpark](https://img.shields.io/badge/framework-PySpark-orange.svg)
 
-Renewable Energy Adoption and Growth
+## Overview
 
-How does it evolve over time?
+This project implements two algorithms for approximating triangle counting in a distributed computing environment using Apache Spark. The goal is to compute the number of triangles in a graph using different approximation techniques, leveraging the power of distributed computing.
 
-Can we forecast the future growth in a specific region?
+### Algorithms Implemented:
+1. **MR_ApproxTCwithNodeColors**: A map-reduce approach with node coloring to approximate the number of triangles.
+2. **MR_ApproxTCwithSparkPartitions**: Utilizes Spark partitions to perform the approximation.
 
-What factors influence the growth?
+### Main Functionality:
+The main function reads command-line parameters including:
+- Number of colors (C)
+- Number of repetitions (R)
+- File containing the graph data
 
-What are seasonal and annual trends in renewable energy production and how do they impact energy supply and demand?
+It then performs triangle counting using both algorithms, printing results such as:
+- Number of triangles
+- Running time for each approach
 
-Electricity price forecasting 1. Can we predict electricity prices based on the availability of renewable energy sources? 2. How does integration impact price volatility?
+This project demonstrates the use of Spark for distributed triangle counting, providing two approximation methods based on node coloring and Spark partitions.
 
-Carbon emission reduction
+## Getting Started
 
-How does the growth of renewable energy sources contribute to a reduction in carbon?
+1. **Clone the repository:**
 
-Can we estimate the potential impact of future renewable energy adoption on future carbon emissions?
+    ```bash
+    git clone https://github.com/yourusername/triangle-counting-spark.git
+    cd triangle-counting-spark
+    ```
 
-The analysis will be made general for the EU and for each country separately.
+2. **Set up the Spark environment:**
+    - Install the required dependencies using `pip` or your preferred package manager.
 
-Data we need:
+3. **Run the program:**
+    - Run the following command to execute the triangle counting algorithms:
 
-Energy consumption for each country annually and monthly for each type of energy production
+    ```bash
+    spark-submit triangle-counting.py --colors C --reps R --graph-file <path_to_graph_file>
+    ```
 
-Electricity prices for each country during the same period
+4. **Output:**
+    - The results will be displayed in the terminal with the number of triangles and the corresponding execution time for both algorithms.
 
-CO2 emissions for each country
+## Requirements
 
-1.Obtaining Data
+- Apache Spark
+- Python 3.x
+- PySpark
 
-Datasets Our core data covers the following subjects:
+## License
 
--  Electricity generation (TWh), provided both by fuel type and aggregated -  Electricity net imports (TWh) -  Electricity demand (TWh), calculated as the sum of power production and net imports -  Installed power generation capacity (GW), broken down by fuel type -  Emissions from electricity generation (Mt CO2e), calculated from IPCC emissions factors
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Fuel Types
+## Acknowledgements
 
-In our global dataset, fuel data is mapped into nine generation types: Bioenergy, Coal, Gas, Hydro, Nuclear, Other Fossil, Other Renewables, Solar, and Wind. In our European dataset, Coal is further split into Hard Coal and Lignite.
+- Special thanks to the contributors to Apache Spark for their distributed computing framework.
 
-Overview
+---
 
-Ember releases time series data of power generation, broken down by fuel type, and power imports. These figures are then combined to produce a total power demand time series for each country. "% share" values refer to the share of generation (this does not include net imports) and not the share of consumption unless otherwise specified. We provide data for 215 countries from 2000 to 2021, and where possible have gathered 2022 data using national sources.
+### **Project 2: Spark-based Triangle Counting with MapReduce**
 
-Compiling a full dataset from 2000 to 2022 requires using data at multiple timescales. Annual generation data is collected from both national and multi-country sources. For the most recent years, data is often not available. In these cases we use monthly data, which is reported on a shorter lag, to estimate the latest annual generation.
+```markdown
+# Spark-based Triangle Counting with MapReduce
 
-Power data is gathered in a wide variety of formats from multiple sources. In addition to this reconciliation, our data requires considerable cleaning and adjustment of the raw data reported. An overview of our methods is below.
-https://github.com/SkurativskaKateryna/BEFD_2023/tree/1884b6883d7207faf5d183f3c74174b4cf92d10b/docs
+![Python](https://img.shields.io/badge/language-python-blue.svg)
+![PySpark](https://img.shields.io/badge/framework-PySpark-orange.svg)
+
+## Overview
+
+This project provides a Spark application implementing two algorithms for counting triangles in a graph using the MapReduce paradigm. The algorithms are designed to handle large-scale graphs distributed across a cluster of machines.
+
+### Algorithms Implemented:
+1. **Counting Triangles Algorithm**: Calculates the total number of triangles in the graph by iterating over each vertex and its neighbors.
+2. **MapReduce Approximation Algorithm**: Uses the Count Sketch data structure for approximate triangle counting by hashing edges and reducing them based on hash codes.
+
+### Main Functionality:
+The main function sets up the Spark environment and reads input data from a file. Based on the specified flag, it either runs the exact triangle counting algorithm or the approximation algorithm, printing execution times and results.
+
+## Getting Started
+
+1. **Clone the repository:**
+
+    ```bash
+    git clone https://github.com/yourusername/spark-triangle-counting.git
+    cd spark-triangle-counting
+    ```
+
+2. **Set up the Spark environment:**
+    - Install the required dependencies.
+
+3. **Run the program:**
+    - Use the following command to execute the triangle counting algorithm:
+
+    ```bash
+    spark-submit triangle-counting.py --algorithm <exact|approx> --graph-file <path_to_graph_file>
+    ```
+
+4. **Output:**
+    - Results will include the number of triangles and the execution time for the chosen algorithm.
+
+## Requirements
+
+- Apache Spark
+- Python 3.x
+- PySpark
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+- Thanks to the Spark community for making distributed computing easy and scalable.
+
+---
+
+### **Project 3: Spark Streaming - Count Sketch for Frequency Estimation**
+
+```markdown
+# Spark Streaming - Count Sketch for Frequency Estimation
+
+![Python](https://img.shields.io/badge/language-python-blue.svg)
+![PySpark](https://img.shields.io/badge/framework-PySpark-orange.svg)
+
+## Overview
+
+This project implements a Spark Streaming application that uses the Count Sketch algorithm to estimate the frequency of items in a data stream. The program processes data in real-time, updating the Count Sketch data structure to compute frequency estimates and other statistics.
+
+### Main Functionality:
+- **Count Sketch Algorithm**: Used to estimate the frequency of items in the data stream efficiently using hash functions and hash tables.
+- **Real-time Data Processing**: The program receives a stream of data from a specified port and processes each batch of data in real-time.
+- **Final Statistics**: Computes the total number of items, the number of distinct items, and the average relative error in frequency estimates.
+
+## Getting Started
+
+1. **Clone the repository:**
+
+    ```bash
+    git clone https://github.com/yourusername/spark-streaming-count-sketch.git
+    cd spark-streaming-count-sketch
+    ```
+
+2. **Set up the Spark environment:**
+    - Install the required dependencies.
+
+3. **Run the program:**
+    - Start the streaming application using:
+
+    ```bash
+    spark-submit count-sketch-streaming.py --port <data-port> --hash-functions <num-functions> --hash-tables <num-tables>
+    ```
+
+4. **Output:**
+    - The program will print statistics like the total number of items, number of distinct items, and frequency estimates with the error margins.
+
+## Requirements
+
+- Apache Spark
+- Python 3.x
+- PySpark
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+- Thanks to the Spark Streaming framework for enabling real-time data processing in distributed environments.
+
+---
+
+### **Project 4: Renewable Energy Analysis in the EU**
+
+```markdown
+# Renewable Energy Analysis in the EU
+
+![R](https://img.shields.io/badge/language-R-blue.svg)
+
+## Overview
+
+This project focuses on analyzing the adoption of renewable energy sources, electricity price forecasting, and the reduction of carbon emissions in the European Union. It investigates how renewable energy consumption and production evolve over time and how they influence energy prices and CO2 emissions.
+
+The analysis is conducted using R-Studio, and results will be presented in a markdown format.
+
+### Key Questions:
+- **Renewable Energy Adoption**: How does renewable energy adoption evolve over time in the EU? What factors influence the growth?
+- **Electricity Price Forecasting**: Can electricity prices be predicted based on renewable energy availability? How does integration affect price volatility?
+- **Carbon Emission Reduction**: How does renewable energy growth contribute to reducing carbon emissions, and what is its future impact?
+
+## Data Sources
+
+- **Energy Consumption**: Annual and monthly data for each country and energy production type.
+- **Electricity Prices**: Historical data for electricity prices in EU countries.
+- **CO2 Emissions**: CO2 emissions data for EU countries correlated with energy production.
+
+### Data Breakdown:
+- **Electricity Generation**: By fuel type (Bioenergy, Coal, Gas, Hydro, Nuclear, Solar, Wind).
+- **Electricity Net Imports** and **Demand**.
+- **Installed Power Generation Capacity**.
+- **Emissions from Electricity Generation**.
+
+## Getting Started
+
+1. **Clone the repository:**
+
+    ```bash
+    git clone https://github.com/SkurativskaKateryna/BEFD_2023.git
+    cd BEFD_2023
+    ```
+
+2. **Set up the R environment:**
+    - Install the required packages listed in `DESCRIPTION`.
+
+3. **Run the analysis:**
+    - Open the R project file (`.Rproj`) and run the provided R scripts.
+
+4. **Output:**
+    - The results will be available in markdown format, including visualizations and data analysis interpretations.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+
+- Data is sourced from Ember, covering energy production, consumption, and carbon emissions across the EU.
+
