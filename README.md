@@ -61,8 +61,6 @@ The dataset requires significant data cleaning and adjustment, as raw data is pr
 
 ## How to Use the Project
 
-1. Clone the repository:
-
 1. **Clone the repository:**
 
    ```bash
