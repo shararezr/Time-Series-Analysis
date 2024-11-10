@@ -1,4 +1,5 @@
 # Renewable Energy Analysis in the EU
+![R](https://img.shields.io/badge/language-R-brightgreen.svg)
 
 This project aims to analyze renewable energy production, consumption, and its effects on electricity prices and CO2 emissions in the European Union. We explore the evolution of renewable energy adoption over time, its impact on electricity prices, and how it contributes to reducing carbon emissions.
 
